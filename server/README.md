@@ -4,12 +4,16 @@ MCP (Model Context Protocol) server for Godot Engine integration. Enables AI ass
 
 ## Features
 
-- **33 MCP tools** across 8 categories (scene, node, script, editor, project, screenshot, animation, tilemap)
+<!-- NPM_FEATURES_START -->
+- **8 MCP tools** for scene, node, editor, project, animation, tilemap, resource operations
 - **3 MCP resources** for reading scene trees, scripts, and project files
 - Real-time bidirectional communication via WebSocket
-- Debug output and screenshot capture from running games
-- Full TileMapLayer and GridMap editing support
-- Animation query, playback, and editing
+- Screenshot capture from editor viewports and running games
+- Full animation support (query, playback, editing)
+- TileMapLayer and GridMap editing
+- Resource inspection for SpriteFrames, TileSets, Materials, and Textures
+- Debug output capture from running games
+<!-- NPM_FEATURES_END -->
 
 ## Requirements
 

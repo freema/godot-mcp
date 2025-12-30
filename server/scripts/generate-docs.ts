@@ -18,6 +18,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DOCS_DIR = join(__dirname, '../../docs');
 const TOOLS_DIR = join(DOCS_DIR, 'tools');
 const ROOT_README = join(__dirname, '../../README.md');
+const NPM_README = join(__dirname, '../README.md');
 
 interface ToolCategory {
   name: string;
@@ -440,11 +441,7 @@ ${categories.map(c => `| [${c.name}](tools/${c.filename}.md) | ${c.tools.length}
 
 ## Installation
 
-\`\`\`bash
-npx @anthropic-ai/create-mcp@latest init godot-mcp
-\`\`\`
-
-Or add to your MCP configuration:
+Add to your MCP configuration:
 
 \`\`\`json
 {
@@ -525,6 +522,15 @@ function updateRootReadme(): void {
   console.log('  Updated README.md');
 }
 
+function updateNpmReadme(): void {
+  let readme = readFileSync(NPM_README, 'utf-8');
+
+  readme = replaceMarkerContent(readme, 'NPM_FEATURES', generateReadmeFeatures());
+
+  writeFileSync(NPM_README, readme);
+  console.log('  Updated server/README.md (npm)');
+}
+
 function main(): void {
   console.log('Generating documentation...');
 
@@ -549,6 +555,7 @@ function main(): void {
   console.log('  Created docs/resources.md');
 
   updateRootReadme();
+  updateNpmReadme();
 
   console.log(`\nGenerated documentation for ${categories.reduce((sum, c) => sum + c.tools.length, 0)} tools and ${allResources.length} resources.`);
 }

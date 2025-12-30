@@ -25,11 +25,7 @@ This server provides **8 tools** and **3 resources** for AI-assisted Godot devel
 
 ## Installation
 
-```bash
-npx @anthropic-ai/create-mcp@latest init godot-mcp
-```
-
-Or add to your MCP configuration:
+Add to your MCP configuration:
 
 ```json
 {
