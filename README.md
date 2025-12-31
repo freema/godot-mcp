@@ -1,35 +1,26 @@
 # godot-mcp
 
-A Model Context Protocol (MCP) server for Godot Engine 4.5+, enabling AI assistants to interact with your Godot projects in real-time.
+MCP server for Godot Engine 4.5+, enabling AI assistants to interact with your Godot projects.
 
 ## Features
 
-<!-- FEATURES_START -->
-- **8 MCP tools** for scene, node, editor, project, animation, tilemap, resource operations
+- **8 MCP tools** across 7 categories
 - **3 MCP resources** for reading scene trees, scripts, and project files
-- Real-time bidirectional communication via WebSocket
 - Screenshot capture from editor viewports and running games
 - Full animation support (query, playback, editing)
 - TileMapLayer and GridMap editing
 - Resource inspection for SpriteFrames, TileSets, Materials, and Textures
 - Debug output capture from running games
-<!-- FEATURES_END -->
-
-## Architecture
-
-```
-[Claude/IDE] <--stdio--> [MCP Server (TypeScript)] <--WebSocket:6550--> [Godot Addon (GDScript)]
-```
 
 ## Quick Start
 
 ### 1. Install the Godot Addon
 
-Copy the `godot/addons/godot_mcp` folder to your Godot project's `addons` directory, then enable it in Project Settings > Plugins.
+Download the addon from [GitHub Releases](https://github.com/satelliteoflove/godot-mcp/releases) and extract to your project's `addons` directory. Enable it in Project Settings > Plugins.
 
 ### 2. Configure Your AI Assistant
 
-**Claude Desktop** - Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+**Claude Desktop** - Add to config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
 ```json
 {
@@ -42,7 +33,7 @@ Copy the `godot/addons/godot_mcp` folder to your Godot project's `addons` direct
 }
 ```
 
-**Claude Code** - Add to your project's `.mcp.json`:
+**Claude Code** - Add to `.mcp.json`:
 
 ```json
 {
@@ -57,55 +48,42 @@ Copy the `godot/addons/godot_mcp` folder to your Godot project's `addons` direct
 
 ### 3. Start Using
 
-1. Open your Godot project (with the addon enabled)
-2. Restart your AI assistant
-3. Start asking for help with your Godot project
+Open your Godot project (with addon enabled), restart your AI assistant, and start building.
 
-## Available Tools
+## Tools
 
-<!-- TOOLS_START -->
-### Scene Tools (1)
-- `scene` - Manage scenes: open, save, or create scenes
+| Tool | Description |
+|------|-------------|
+| `scene` | Manage scenes: open, save, or create scenes |
+| `node` | Manage scene nodes: get properties, find, create, update, delete, reparent, attach/detach scripts |
+| `editor` | Control the Godot editor: get state, manage selection, run/stop project, get debug output, capture screenshots |
+| `project` | Get project information and settings |
+| `animation` | Query, control, and edit animations |
+| `tilemap` | Query and edit TileMapLayer data: list layers, get info, get/set cells, convert coordinates |
+| `gridmap` | Query and edit GridMap data: list gridmaps, get info, get/set cells |
+| `resource` | Manage Godot resources: inspect Resource files by path |
 
-### Node Tools (1)
-- `node` - Manage scene nodes: get properties, find, create, update, delete, reparent, attach/detach scripts
+See [docs/](docs/) for detailed API reference.
 
-### Editor Tools (1)
-- `editor` - Control the Godot editor: get state, manage selection, run/stop project, get debug output, capture screenshots
+## Architecture
 
-### Project Tools (1)
-- `project` - Get project information and settings
-
-### Animation Tools (1)
-- `animation` - Query, control, and edit animations. Query: list_players, get_info, get_details, get_keyframes. Playback: play, stop, pause, seek, queue, clear_queue. Edit: create, delete, rename, update_props, add_track, remove_track, add_keyframe, remove_keyframe, update_keyframe
-
-### TileMap/GridMap Tools (2)
-- `tilemap` - Query and edit TileMapLayer data: list layers, get info, get/set cells, convert coordinates
-- `gridmap` - Query and edit GridMap data: list gridmaps, get info, get/set cells
-
-### Resource Tools (1)
-- `resource` - Manage Godot resources: inspect Resource files by path. Returns type-specific structured data for SpriteFrames, TileSet, Material, Texture2D, etc.
-<!-- TOOLS_END -->
-
-## API Documentation
-
-See the [docs folder](docs/) for complete API reference generated from tool definitions.
+```
+[AI Assistant] <--stdio--> [MCP Server] <--WebSocket--> [Godot Addon]
+```
 
 ## Development
 
 ```bash
 cd server
-npm install
-npm run build
-npm run dev    # Watch mode
-npm test       # Run tests
-npm run generate-docs  # Regenerate docs and README
+npm install && npm run build
+npm test
+npm run generate-docs
 ```
 
 ## Requirements
 
 - Node.js 20+
-- Godot 4.5+ (required for Logger class)
+- Godot 4.5+
 
 ## License
 

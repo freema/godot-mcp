@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs['server--release_created'] }}
+      tag_name: ${{ steps.release.outputs['server--tag_name'] }}
+      version: ${{ steps.release.outputs['server--version'] }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -85,4 +87,25 @@ jobs:
         working-directory: server
       - run: npm publish --access public
         working-directory: server
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  upload-addon:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create addon zip
+        run: |
+          cd godot/addons
+          zip -r ../../godot-mcp-addon-${{ needs.release-please.outputs.version }}.zip godot_mcp
+      - name: Upload addon to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ needs.release-please.outputs.tag_name }} \
+            godot-mcp-addon-${{ needs.release-please.outputs.version }}.zip \
+            --clobber

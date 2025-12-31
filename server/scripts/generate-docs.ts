@@ -465,70 +465,176 @@ Add to your MCP configuration:
 `;
 }
 
-function generateReadmeFeatures(): string {
+function generateRootReadme(): string {
   const totalTools = categories.reduce((sum, cat) => sum + cat.tools.length, 0);
-  const categoryNames = categories.map(c => c.filename).join(', ');
+  const allTools = categories.flatMap(c => c.tools);
   const capabilities = analyzeCapabilities();
 
   const featureList = [
-    `**${totalTools} MCP tools** for ${categoryNames} operations`,
+    `**${totalTools} MCP tools** across ${categories.length} categories`,
     `**${allResources.length} MCP resources** for reading scene trees, scripts, and project files`,
-    'Real-time bidirectional communication via WebSocket',
     ...capabilities,
   ];
 
-  return featureList.map(f => `- ${f}`).join('\n');
-}
+  const toolsTable = allTools.map(tool => {
+    const desc = tool.description.split('.')[0];
+    return `| \`${tool.name}\` | ${desc} |`;
+  }).join('\n');
 
-function generateReadmeTools(): string {
-  let content = '';
+  return `# godot-mcp
 
-  for (const category of categories) {
-    content += `### ${category.name} Tools (${category.tools.length})\n`;
-    for (const tool of category.tools) {
-      content += `- \`${tool.name}\` - ${tool.description}\n`;
+MCP server for Godot Engine 4.5+, enabling AI assistants to interact with your Godot projects.
+
+## Features
+
+${featureList.map(f => `- ${f}`).join('\n')}
+
+## Quick Start
+
+### 1. Install the Godot Addon
+
+Download the addon from [GitHub Releases](https://github.com/satelliteoflove/godot-mcp/releases) and extract to your project's \`addons\` directory. Enable it in Project Settings > Plugins.
+
+### 2. Configure Your AI Assistant
+
+**Claude Desktop** - Add to config (\`~/Library/Application Support/Claude/claude_desktop_config.json\` on macOS):
+
+\`\`\`json
+{
+  "mcpServers": {
+    "godot-mcp": {
+      "command": "npx",
+      "args": ["-y", "@satelliteoflove/godot-mcp"]
     }
-    content += '\n';
   }
-
-  return content.trim();
 }
+\`\`\`
 
-function replaceMarkerContent(readme: string, marker: string, content: string): string {
-  const startMarker = `<!-- ${marker}_START -->`;
-  const endMarker = `<!-- ${marker}_END -->`;
+**Claude Code** - Add to \`.mcp.json\`:
 
-  const startIdx = readme.indexOf(startMarker);
-  const endIdx = readme.indexOf(endMarker);
-
-  if (startIdx === -1 || endIdx === -1) {
-    console.warn(`  Warning: Markers for ${marker} not found in README.md`);
-    return readme;
+\`\`\`json
+{
+  "mcpServers": {
+    "godot-mcp": {
+      "command": "npx",
+      "args": ["-y", "@satelliteoflove/godot-mcp"]
+    }
   }
+}
+\`\`\`
 
-  const before = readme.substring(0, startIdx + startMarker.length);
-  const after = readme.substring(endIdx);
+### 3. Start Using
 
-  return `${before}\n${content}\n${after}`;
+Open your Godot project (with addon enabled), restart your AI assistant, and start building.
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+${toolsTable}
+
+See [docs/](docs/) for detailed API reference.
+
+## Architecture
+
+\`\`\`
+[AI Assistant] <--stdio--> [MCP Server] <--WebSocket--> [Godot Addon]
+\`\`\`
+
+## Development
+
+\`\`\`bash
+cd server
+npm install && npm run build
+npm test
+npm run generate-docs
+\`\`\`
+
+## Requirements
+
+- Node.js 20+
+- Godot 4.5+
+
+## License
+
+MIT
+`;
 }
 
-function updateRootReadme(): void {
-  let readme = readFileSync(ROOT_README, 'utf-8');
+function generateNpmReadme(): string {
+  const totalTools = categories.reduce((sum, cat) => sum + cat.tools.length, 0);
+  const capabilities = analyzeCapabilities();
 
-  readme = replaceMarkerContent(readme, 'FEATURES', generateReadmeFeatures());
-  readme = replaceMarkerContent(readme, 'TOOLS', generateReadmeTools());
+  const featureList = [
+    `**${totalTools} MCP tools** across ${categories.length} categories`,
+    `**${allResources.length} MCP resources** for reading scene trees, scripts, and project files`,
+    ...capabilities,
+  ];
 
-  writeFileSync(ROOT_README, readme);
-  console.log('  Updated README.md');
+  return `# @satelliteoflove/godot-mcp
+
+MCP server for Godot Engine 4.5+, enabling AI assistants to interact with your Godot projects.
+
+## Features
+
+${featureList.map(f => `- ${f}`).join('\n')}
+
+## Installation
+
+\`\`\`bash
+npx @satelliteoflove/godot-mcp
+\`\`\`
+
+## Setup
+
+1. Download the addon from [GitHub Releases](https://github.com/satelliteoflove/godot-mcp/releases)
+2. Extract to your project's \`addons\` directory
+3. Enable it in Project Settings > Plugins
+4. Configure your MCP client (see below)
+
+### Claude Desktop
+
+Add to \`~/Library/Application Support/Claude/claude_desktop_config.json\` (macOS) or \`%APPDATA%\\Claude\\claude_desktop_config.json\` (Windows):
+
+\`\`\`json
+{
+  "mcpServers": {
+    "godot-mcp": {
+      "command": "npx",
+      "args": ["-y", "@satelliteoflove/godot-mcp"]
+    }
+  }
 }
+\`\`\`
 
-function updateNpmReadme(): void {
-  let readme = readFileSync(NPM_README, 'utf-8');
+### Claude Code
 
-  readme = replaceMarkerContent(readme, 'NPM_FEATURES', generateReadmeFeatures());
+Add to \`.mcp.json\`:
 
-  writeFileSync(NPM_README, readme);
-  console.log('  Updated server/README.md (npm)');
+\`\`\`json
+{
+  "mcpServers": {
+    "godot-mcp": {
+      "command": "npx",
+      "args": ["-y", "@satelliteoflove/godot-mcp"]
+    }
+  }
+}
+\`\`\`
+
+## Documentation
+
+See the [GitHub repository](https://github.com/satelliteoflove/godot-mcp) for full documentation.
+
+## Requirements
+
+- Node.js 20+
+- Godot 4.5+
+
+## License
+
+MIT
+`;
 }
 
 function main(): void {
@@ -554,8 +660,11 @@ function main(): void {
   writeFileSync(join(DOCS_DIR, 'resources.md'), generateResourcesDoc());
   console.log('  Created docs/resources.md');
 
-  updateRootReadme();
-  updateNpmReadme();
+  writeFileSync(ROOT_README, generateRootReadme());
+  console.log('  Created README.md');
+
+  writeFileSync(NPM_README, generateNpmReadme());
+  console.log('  Created server/README.md');
 
   console.log(`\nGenerated documentation for ${categories.reduce((sum, c) => sum + c.tools.length, 0)} tools and ${allResources.length} resources.`);
 }
