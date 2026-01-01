@@ -31,6 +31,9 @@ func _on_debugger_message(message: String, data: Array) -> bool:
 		"get_performance_metrics":
 			_handle_get_performance_metrics()
 			return true
+		"find_nodes":
+			_handle_find_nodes(data)
+			return true
 	return false
 
 
@@ -80,6 +83,62 @@ func _handle_get_debug_output(data: Array) -> void:
 	if clear and _logger:
 		_logger.clear()
 	EngineDebugger.send_message("godot_mcp:debug_output_result", [output])
+
+
+func _handle_find_nodes(data: Array) -> void:
+	var name_pattern: String = data[0] if data.size() > 0 else ""
+	var type_filter: String = data[1] if data.size() > 1 else ""
+	var root_path: String = data[2] if data.size() > 2 else ""
+
+	var tree := get_tree()
+	var scene_root := tree.current_scene if tree else null
+	if not scene_root:
+		EngineDebugger.send_message("godot_mcp:find_nodes_result", [[], 0, "No scene running"])
+		return
+
+	var search_root: Node = scene_root
+	if not root_path.is_empty():
+		search_root = _get_node_from_path(root_path, scene_root)
+		if not search_root:
+			EngineDebugger.send_message("godot_mcp:find_nodes_result", [[], 0, "Root not found: " + root_path])
+			return
+
+	var matches: Array = []
+	_find_recursive(search_root, scene_root, name_pattern, type_filter, matches)
+	EngineDebugger.send_message("godot_mcp:find_nodes_result", [matches, matches.size(), ""])
+
+
+func _get_node_from_path(path: String, scene_root: Node) -> Node:
+	if path == "/" or path.is_empty():
+		return scene_root
+
+	if path.begins_with("/root/"):
+		var parts := path.split("/")
+		if parts.size() >= 3 and parts[2] == scene_root.name:
+			var relative := "/".join(parts.slice(3))
+			if relative.is_empty():
+				return scene_root
+			return scene_root.get_node_or_null(relative)
+
+	if path.begins_with("/"):
+		path = path.substr(1)
+
+	return scene_root.get_node_or_null(path)
+
+
+func _find_recursive(node: Node, scene_root: Node, name_pattern: String, type_filter: String, results: Array) -> void:
+	var name_matches := name_pattern.is_empty() or node.name.matchn(name_pattern)
+	var type_matches := type_filter.is_empty() or node.is_class(type_filter)
+
+	if name_matches and type_matches:
+		var path := "/root/" + scene_root.name
+		var relative := scene_root.get_path_to(node)
+		if relative != NodePath("."):
+			path += "/" + str(relative)
+		results.append({"path": path, "type": node.get_class()})
+
+	for child in node.get_children():
+		_find_recursive(child, scene_root, name_pattern, type_filter, results)
 
 
 func _handle_get_performance_metrics() -> void:

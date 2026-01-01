@@ -5,11 +5,13 @@ class_name MCPDebuggerPlugin
 signal screenshot_received(success: bool, image_base64: String, width: int, height: int, error: String)
 signal debug_output_received(output: PackedStringArray)
 signal performance_metrics_received(metrics: Dictionary)
+signal find_nodes_received(matches: Array, count: int, error: String)
 
 var _active_session_id: int = -1
 var _pending_screenshot: bool = false
 var _pending_debug_output: bool = false
 var _pending_performance_metrics: bool = false
+var _pending_find_nodes: bool = false
 
 
 func _has_capture(prefix: String) -> bool:
@@ -26,6 +28,9 @@ func _capture(message: String, data: Array, session_id: int) -> bool:
 			return true
 		"godot_mcp:performance_metrics_result":
 			_handle_performance_metrics_result(data)
+			return true
+		"godot_mcp:find_nodes_result":
+			_handle_find_nodes_result(data)
 			return true
 	return false
 
@@ -45,6 +50,9 @@ func _session_stopped() -> void:
 	if _pending_performance_metrics:
 		_pending_performance_metrics = false
 		performance_metrics_received.emit({})
+	if _pending_find_nodes:
+		_pending_find_nodes = false
+		find_nodes_received.emit([], 0, "Game session ended")
 
 
 func has_active_session() -> bool:
@@ -113,3 +121,24 @@ func _handle_performance_metrics_result(data: Array) -> void:
 	_pending_performance_metrics = false
 	var metrics: Dictionary = data[0] if data.size() > 0 else {}
 	performance_metrics_received.emit(metrics)
+
+
+func request_find_nodes(name_pattern: String, type_filter: String, root_path: String) -> void:
+	if _active_session_id < 0:
+		find_nodes_received.emit([], 0, "No active game session")
+		return
+	_pending_find_nodes = true
+	var session := get_session(_active_session_id)
+	if session:
+		session.send_message("godot_mcp:find_nodes", [name_pattern, type_filter, root_path])
+	else:
+		_pending_find_nodes = false
+		find_nodes_received.emit([], 0, "Could not get debugger session")
+
+
+func _handle_find_nodes_result(data: Array) -> void:
+	_pending_find_nodes = false
+	var matches: Array = data[0] if data.size() > 0 else []
+	var count: int = data[1] if data.size() > 1 else 0
+	var error: String = data[2] if data.size() > 2 else ""
+	find_nodes_received.emit(matches, count, error)

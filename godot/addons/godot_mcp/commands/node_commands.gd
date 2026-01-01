@@ -2,6 +2,9 @@
 extends MCPBaseCommand
 class_name MCPNodeCommands
 
+var _find_nodes_pending := false
+var _find_nodes_result: Dictionary = {}
+
 
 func get_commands() -> Dictionary:
 	return {
@@ -44,16 +47,20 @@ func get_node_properties(params: Dictionary) -> Dictionary:
 
 
 func find_nodes(params: Dictionary) -> Dictionary:
-	var scene_check := _require_scene_open()
-	if not scene_check.is_empty():
-		return scene_check
-
 	var name_pattern: String = params.get("name_pattern", "")
 	var type_filter: String = params.get("type", "")
 	var root_path: String = params.get("root_path", "")
 
 	if name_pattern.is_empty() and type_filter.is_empty():
 		return _error("INVALID_PARAMS", "At least one of name_pattern or type is required")
+
+	var debugger := _plugin.get_debugger_plugin() as MCPDebuggerPlugin
+	if debugger and debugger.has_active_session():
+		return await _find_nodes_via_game(debugger, name_pattern, type_filter, root_path)
+
+	var scene_check := _require_scene_open()
+	if not scene_check.is_empty():
+		return scene_check
 
 	var scene_root := EditorInterface.get_edited_scene_root()
 	var search_root: Node = scene_root
@@ -67,6 +74,27 @@ func find_nodes(params: Dictionary) -> Dictionary:
 	_find_recursive(search_root, scene_root, name_pattern, type_filter, matches)
 
 	return _success({"matches": matches, "count": matches.size()})
+
+
+func _find_nodes_via_game(debugger: MCPDebuggerPlugin, name_pattern: String, type_filter: String, root_path: String) -> Dictionary:
+	_find_nodes_pending = true
+	_find_nodes_result = {}
+
+	debugger.find_nodes_received.connect(_on_find_nodes_received, CONNECT_ONE_SHOT)
+	debugger.request_find_nodes(name_pattern, type_filter, root_path)
+
+	while _find_nodes_pending:
+		await Engine.get_main_loop().process_frame
+
+	return _find_nodes_result
+
+
+func _on_find_nodes_received(matches: Array, count: int, error: String) -> void:
+	_find_nodes_pending = false
+	if not error.is_empty():
+		_find_nodes_result = _error("GAME_ERROR", error)
+	else:
+		_find_nodes_result = _success({"matches": matches, "count": count})
 
 
 func _find_recursive(node: Node, scene_root: Node, name_pattern: String, type_filter: String, results: Array[Dictionary]) -> void:
