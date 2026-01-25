@@ -12,13 +12,12 @@ export const currentScriptResource = defineResource({
     }>('get_current_script');
 
     if (!result.path) {
-      return JSON.stringify({ error: 'No script currently open' });
+      return '# No script currently open';
     }
 
-    return JSON.stringify({
-      path: result.path,
-      content: result.content,
-    });
+    const content = result.content ?? '';
+    const header = `# Path: ${result.path}`;
+    return content.length > 0 ? `${header}\n${content}` : `${header}\n`;
   },
 });
 
