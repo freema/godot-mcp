@@ -18,6 +18,7 @@ func get_commands() -> Dictionary:
 		"stop_project": stop_project,
 		"get_debug_output": get_debug_output,
 		"get_performance_metrics": get_performance_metrics,
+		"get_log_messages": get_log_messages,
 		"get_errors": get_errors,
 		"get_stack_trace": get_stack_trace,
 	}
@@ -130,12 +131,30 @@ func _on_performance_metrics_received(metrics: Dictionary) -> void:
 	_performance_metrics_result = metrics
 
 
-func get_errors(params: Dictionary) -> Dictionary:
+func get_log_messages(params: Dictionary) -> Dictionary:
 	var clear: bool = params.get("clear", false)
-	var errors := MCPLogger.get_errors()
+	var limit: int = params.get("limit", 50)
+
+	var all_messages := MCPLogger.get_errors()
+	var total_count := all_messages.size()
+
+	var limited: Array[Dictionary] = []
+	var start_index := maxi(0, total_count - limit)
+	for i in range(start_index, total_count):
+		limited.append(all_messages[i])
+
 	if clear:
 		MCPLogger.clear_errors()
-	return _success({"error_count": errors.size(), "errors": errors})
+
+	return _success({
+		"total_count": total_count,
+		"returned_count": limited.size(),
+		"messages": limited,
+	})
+
+
+func get_errors(params: Dictionary) -> Dictionary:
+	return get_log_messages(params)
 
 
 func get_stack_trace(_params: Dictionary) -> Dictionary:

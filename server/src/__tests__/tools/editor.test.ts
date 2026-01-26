@@ -89,27 +89,61 @@ describe('editor tool', () => {
     });
   });
 
-  describe('get_errors', () => {
+  describe('get_log_messages', () => {
+    it('returns "No log messages" when empty', async () => {
+      const ctx = createToolContext(mock);
+      mock.mockResponse({ total_count: 0, returned_count: 0, messages: [] });
+      expect(await editor.execute({ action: 'get_log_messages' }, ctx)).toBe('No log messages');
+    });
+
+    it('returns JSON with messages when present', async () => {
+      const ctx = createToolContext(mock);
+      const responseData = {
+        total_count: 2,
+        returned_count: 2,
+        messages: [
+          { timestamp: 12345, type: 'Parser Error', message: 'Could not find type', file: 'res://test.gd', line: 10, error_type: 0, frames: [] },
+          { timestamp: 12346, type: 'Script Error', message: 'Type mismatch', file: 'res://test.gd', line: 15, error_type: 2, frames: [] },
+        ],
+      };
+      mock.mockResponse(responseData);
+      const result = await editor.execute({ action: 'get_log_messages' }, ctx);
+      expect(JSON.parse(result as string)).toEqual(responseData);
+    });
+
+    it('passes limit param to Godot', async () => {
+      const ctx = createToolContext(mock);
+      mock.mockResponse({ total_count: 0, returned_count: 0, messages: [] });
+      await editor.execute({ action: 'get_log_messages', limit: 10 }, ctx);
+      expect(mock.calls[0].params.limit).toBe(10);
+    });
+  });
+
+  describe('get_errors (deprecated alias)', () => {
     it('returns "No errors" when empty, JSON when present', async () => {
       const ctx = createToolContext(mock);
 
-      mock.mockResponse({ error_count: 0, errors: [] });
+      mock.mockResponse({ total_count: 0, returned_count: 0, messages: [] });
       expect(await editor.execute({ action: 'get_errors' }, ctx)).toBe('No errors');
 
-      const errorData = {
-        error_count: 1,
-        errors: [{
+      const responseData = {
+        total_count: 1,
+        returned_count: 1,
+        messages: [{
           timestamp: 12345,
           type: 'Parser Error',
           message: 'Could not find type',
           file: 'res://test.gd',
           line: 10,
+          error_type: 0,
           frames: [],
         }],
       };
-      mock.mockResponse(errorData);
+      mock.mockResponse(responseData);
       const result = await editor.execute({ action: 'get_errors' }, ctx);
-      expect(JSON.parse(result as string)).toEqual(errorData);
+      const parsed = JSON.parse(result as string);
+      expect(parsed.error_count).toBe(1);
+      expect(parsed.errors).toEqual(responseData.messages);
     });
   });
 
