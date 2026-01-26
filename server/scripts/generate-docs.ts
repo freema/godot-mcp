@@ -473,56 +473,21 @@ Add to your MCP configuration:
 }
 
 function generateRootReadme(): string {
-  const allTools = categories.flatMap(c => c.tools);
-
-  const toolsTable = allTools.map(tool => {
-    const desc = tool.description.split('.')[0];
-    return `| \`${tool.name}\` | ${desc} |`;
-  }).join('\n');
-
   return `# godot-mcp
 
-An MCP server that gives Claude direct visibility into your Godot editor and running game. Instead of copy-pasting debug output or describing what you're seeing, Claude can observe it directly.
+MCP server that connects Claude to your Godot editor. Less copy-paste, more creating.
 
-## Core Capabilities
+## Why This Exists
 
-**Observe** - Claude sees what you see
-- Live editor state, selection, and open scenes
-- Screenshots from editor viewports or running game
-- Debug output and performance metrics from runtime
-- Camera position and viewport in 2D and 3D
+Using AI assistants for game dev means a lot of back-and-forth: copying error messages, describing what's on screen, pasting debug output, manually applying suggested changes. It works, but it's tedious.
 
-**Inspect** - Deep access to your project
-- Scene tree traversal with node properties
-- 3D spatial data: transforms, bounding boxes, visibility
-- Resource introspection: SpriteFrames, TileSets, Materials
-- Project settings and input mappings
-
-**Modify** - Direct manipulation when needed
-- Create, update, delete, and reparent nodes
-- Attach and detach scripts
-- Edit TileMapLayers and GridMaps cell-by-cell
-- Control animation playback and edit tracks/keyframes
-- Run and stop the game from the editor
+This MCP gives Claude direct access to your Godot editor. It can see your scene tree, capture screenshots, read errors, and make changes directly. You stay focused on the creative work while the mechanical relay disappears. Faster iterations, less busywork, more time building the game you actually want to make.
 
 ## Quick Start
 
-### 1. Configure Your AI Assistant
+### 1. Configure your AI assistant
 
-**Claude Desktop** - Add to config (\`~/Library/Application Support/Claude/claude_desktop_config.json\` on macOS):
-
-\`\`\`json
-{
-  "mcpServers": {
-    "godot-mcp": {
-      "command": "npx",
-      "args": ["-y", "@satelliteoflove/godot-mcp"]
-    }
-  }
-}
-\`\`\`
-
-**Claude Code** - Add to \`.mcp.json\`:
+**Claude Desktop** (\`~/Library/Application Support/Claude/claude_desktop_config.json\` on macOS):
 
 \`\`\`json
 {
@@ -535,41 +500,51 @@ An MCP server that gives Claude direct visibility into your Godot editor and run
 }
 \`\`\`
 
-### 2. Install the Godot Addon
+**Claude Code** (\`.mcp.json\` in your project):
+
+\`\`\`json
+{
+  "mcpServers": {
+    "godot-mcp": {
+      "command": "npx",
+      "args": ["-y", "@satelliteoflove/godot-mcp"]
+    }
+  }
+}
+\`\`\`
+
+### 2. Install the Godot addon
 
 \`\`\`bash
 npx @satelliteoflove/godot-mcp --install-addon /path/to/your/godot/project
 \`\`\`
 
-Then enable the addon in Godot: Project Settings > Plugins > Godot MCP.
+Enable in Godot: **Project Settings > Plugins > Godot MCP**
 
-### 3. Start Using
+### 3. Go
 
-Open your Godot project (with addon enabled), restart your AI assistant, and start building.
+Open your Godot project, restart your AI assistant, and start building.
 
-**Version Sync:** The MCP server auto-updates via npx. Version mismatches are detected automatically on connection. If prompted, re-run the install command to update the addon.
+## What Claude Can Do
 
-## Tools
+- **See** your editor, scenes, running game, errors, and performance
+- **Inspect** nodes, resources, animations, tilemaps, 3D spatial data
+- **Modify** scenes, nodes, scripts, animations, tilemaps directly
+- **Test** by running the game and injecting input
+- **Learn** by fetching Godot docs on demand
 
-| Tool | Description |
-|------|-------------|
-${toolsTable}
+## Documentation
 
-See [docs/](docs/) for detailed API reference, including the [Claude Code Setup Guide](docs/claude-code-setup.md).
+- [Claude Code Setup Guide](docs/claude-code-setup.md) - CLAUDE.md templates and workflows
+- [Tools Reference](docs/tools/README.md) - All 11 tools with full API docs
+- [Resources Reference](docs/resources.md) - MCP resources for reading project data
+- [Contributing](CONTRIBUTING.md) - Dev setup, adding tools, release process
+- [Changelog](server/CHANGELOG.md) - Release history
 
 ## Architecture
 
 \`\`\`
-[AI Assistant] <--stdio--> [MCP Server] <--WebSocket--> [Godot Addon]
-\`\`\`
-
-## Development
-
-\`\`\`bash
-cd server
-npm install && npm run build
-npm test
-npm run generate-docs
+[Claude] <--stdio--> [MCP Server] <--WebSocket:6550--> [Godot Addon]
 \`\`\`
 
 ## Requirements
