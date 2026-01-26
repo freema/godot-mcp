@@ -68,10 +68,6 @@ func stop_server() -> void:
 	_rejected_connections = 0
 
 
-func get_rejected_connection_count() -> int:
-	return _rejected_connections
-
-
 func send_response(response: Dictionary) -> void:
 	if not _ws_peer or _ws_peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		MCPLog.warn("Cannot send response: not connected")

@@ -1,13 +1,6 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
-import {
-  Request,
-  Response,
-  ResponseSchema,
-  createRequest,
-  isSuccessResponse,
-  isErrorResponse,
-} from './protocol.js';
+import { ResponseSchema, createRequest, isSuccessResponse, isErrorResponse } from './protocol.js';
 import {
   GodotConnectionError,
   GodotCommandError,

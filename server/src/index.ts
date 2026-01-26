@@ -13,6 +13,7 @@ import { registerAllTools } from './tools/index.js';
 import { registerAllResources } from './resources/index.js';
 import { GodotCommandError } from './utils/errors.js';
 import { setMcpServer, logger } from './utils/logger.js';
+import { getServerVersion } from './version.js';
 
 registerAllTools();
 registerAllResources();
@@ -21,7 +22,7 @@ export async function main() {
   const server = new Server(
     {
       name: 'godot-mcp',
-      version: '0.1.0',
+      version: getServerVersion(),
     },
     {
       capabilities: {
@@ -95,4 +96,3 @@ export async function main() {
 
   logger.info('Server started');
 }
-
