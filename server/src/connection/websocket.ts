@@ -8,6 +8,7 @@ import {
 } from '../utils/errors.js';
 import { getServerVersion } from '../version.js';
 import { logger } from '../utils/logger.js';
+import { getTargetHost, getConnectionStrategy } from '../utils/connection-strategy.js';
 
 const DEFAULT_PORT = 6550;
 const DEFAULT_HOST = 'localhost';
@@ -34,6 +35,7 @@ export interface ConnectionDiagnostics {
   reconnectAttempts: number;
   lastErrorMessage: string | null;
   url: string;
+  environment: 'wsl' | 'native';
 }
 
 export type HandshakeStatus = 'pending' | 'success' | 'failed' | 'timeout';
@@ -74,13 +76,13 @@ export class GodotConnection extends EventEmitter {
   private currentState: 'connected' | 'disconnected' | 'connecting' | 'reconnecting' = 'disconnected';
 
   private readonly host: string;
-  private readonly port: number;
+  private readonly _port: number;
   private readonly autoReconnect: boolean;
 
   constructor(options: GodotConnectionOptions = {}) {
     super();
     this.host = options.host ?? DEFAULT_HOST;
-    this.port = options.port ?? DEFAULT_PORT;
+    this._port = options.port ?? DEFAULT_PORT;
     this.autoReconnect = options.autoReconnect ?? true;
   }
 
@@ -89,7 +91,11 @@ export class GodotConnection extends EventEmitter {
   }
 
   get url(): string {
-    return `ws://${this.host}:${this.port}`;
+    return `ws://${this.host}:${this._port}`;
+  }
+
+  get port(): number {
+    return this._port;
   }
 
   get addonVersion(): string | null {
@@ -118,6 +124,7 @@ export class GodotConnection extends EventEmitter {
   }
 
   getDiagnostics(): ConnectionDiagnostics {
+    const strategy = getConnectionStrategy(this._port);
     return {
       currentState: this.currentState,
       lastDisconnectReason: this.lastDisconnectReason,
@@ -125,6 +132,7 @@ export class GodotConnection extends EventEmitter {
       reconnectAttempts: this.reconnectAttempt,
       lastErrorMessage: this.lastErrorMessage,
       url: this.url,
+      environment: strategy.environment,
     };
   }
 
@@ -468,16 +476,13 @@ function parsePortEnv(value: string | undefined): number | undefined {
   return port;
 }
 
-function parseHostEnv(value: string | undefined): string | undefined {
-  if (!value || value.trim() === '') return undefined;
-  return value.trim();
-}
-
 export function getGodotConnection(): GodotConnection {
   if (!globalConnection) {
+    const host = getTargetHost();
+    const port = parsePortEnv(process.env.GODOT_PORT);
     globalConnection = new GodotConnection({
-      host: parseHostEnv(process.env.GODOT_HOST),
-      port: parsePortEnv(process.env.GODOT_PORT),
+      host,
+      port,
     });
   }
   return globalConnection;
@@ -485,6 +490,14 @@ export function getGodotConnection(): GodotConnection {
 
 export async function initializeConnection(): Promise<void> {
   const connection = getGodotConnection();
+  const strategy = getConnectionStrategy(connection.port);
+
+  // Log connection strategy at startup
+  logger.info('Godot connection strategy', {
+    environment: strategy.environment,
+    targetHost: strategy.targetHost,
+    wsUrl: strategy.wsUrl,
+  });
 
   connection.on('connected', () => {
     logger.info('Connected to Godot');
