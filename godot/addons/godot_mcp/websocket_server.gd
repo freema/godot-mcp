@@ -214,6 +214,11 @@ func _handle_packet(packet: PackedByteArray) -> void:
 		_send_error_response("", "PARSE_ERROR", "Invalid JSON: %s" % json.get_error_message())
 		return
 
+	if not json.data is Dictionary:
+		MCPLog.error("Invalid command format: expected JSON object")
+		_send_error_response("", "INVALID_FORMAT", "Expected JSON object")
+		return
+
 	var data: Dictionary = json.data
 	if not data.has("id") or not data.has("command"):
 		MCPLog.error("Invalid command format")
