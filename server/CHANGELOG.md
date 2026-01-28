@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.1](https://github.com/satelliteoflove/godot-mcp/compare/godot-mcp-v2.12.0...godot-mcp-v2.12.1) (2026-01-28)
+
+
+### Bug Fixes
+
+* use proper semver comparison for addon version checks ([#117](https://github.com/satelliteoflove/godot-mcp/issues/117)) ([d1f1721](https://github.com/satelliteoflove/godot-mcp/commit/d1f1721624af6b39441af60211d89cafd627d3b9)), closes [#116](https://github.com/satelliteoflove/godot-mcp/issues/116)
+
 ## [2.12.0](https://github.com/satelliteoflove/godot-mcp/compare/godot-mcp-v2.11.1...godot-mcp-v2.12.0) (2026-01-28)
 
 
