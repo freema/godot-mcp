@@ -12,140 +12,66 @@ Animation query, playback, and editing tools
 
 Query, control, and edit animations. Query: list_players, get_info, get_details, get_keyframes. Playback: play, stop, seek. Edit: create, delete, update_props, add_track, remove_track, add_keyframe, remove_keyframe, update_keyframe
 
-### Actions
-
-#### `list_players`
+### Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `action` | `list_players`, `get_info`, `get_details`, `get_keyframes`, `play`, `stop`, `seek`, `create`, `delete`, `update_props`, `add_track`, `remove_track`, `add_keyframe`, `remove_keyframe`, `update_keyframe` | Yes |  |
 | `root_path` | string | No | Starting node path (defaults to scene root) |
-
-#### `get_info`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-
-#### `get_details`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
-
-#### `get_keyframes`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
-| `track_index` | number | Yes | Track index |
-
-#### `play`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
+| `node_path` | string | No | Path to the AnimationPlayer |
+| `animation_name` | string | No | Animation name |
+| `track_index` | number | No | Track index |
 | `custom_blend` | number | No | Custom blend time, -1 for default |
 | `custom_speed` | number | No | Playback speed, 1.0 default |
 | `from_end` | boolean | No | Play from end for reverse |
-
-#### `stop`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
 | `keep_state` | boolean | No | Keep current animation state |
-
-#### `seek`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `seconds` | number | Yes | Position to seek to |
+| `seconds` | number | No | Position to seek to |
 | `update` | boolean | No | Update node immediately, default true |
-
-#### `create`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
 | `library_name` | string | No | Library name |
 | `length` | number | No | Animation length in seconds |
 | `loop_mode` | `none`, `linear`, `pingpong` | No | Loop mode: none, linear, pingpong |
 | `step` | number | No | Step value for keyframe snapping |
-
-#### `delete`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
-| `library_name` | string | No | Library name |
-
-#### `update_props`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
-| `length` | number | No | Animation length in seconds |
-| `loop_mode` | `none`, `linear`, `pingpong` | No | Loop mode: none, linear, pingpong |
-| `step` | number | No | Step value for keyframe snapping |
-
-#### `add_track`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
-| `track_type` | `value`, `position_3d`, `rotation_3d`, `scale_3d`, `blend_shape`, `method`, `bezier`, `audio`, `animation` | Yes | Type of track |
-| `track_path` | string | Yes | Node path and property, e.g. "Sprite2D:frame" |
+| `track_type` | `value`, `position_3d`, `rotation_3d`, `scale_3d`, `blend_shape`, `method`, `bezier`, `audio`, `animation` | No | Type of track |
+| `track_path` | string | No | Node path and property, e.g. "Sprite2D:frame" |
 | `insert_at` | number | No | Track index to insert at, -1 for end |
-
-#### `remove_track`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
-| `track_index` | number | Yes | Track index |
-
-#### `add_keyframe`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
-| `track_index` | number | Yes | Track index |
-| `time` | number | Yes | Keyframe time in seconds |
+| `time` | number | No | Keyframe time in seconds |
 | `value` | unknown | No | Keyframe value |
 | `transition` | number | No | Transition curve, 1.0 = linear |
 | `method_name` | string | No | Method name for method tracks |
 | `args` | array | No | Method arguments |
+| `keyframe_index` | number | No | Keyframe index |
+
+### Actions
+
+#### `list_players`
+
+#### `get_info`
+
+#### `get_details`
+
+#### `get_keyframes`
+
+#### `play`
+
+#### `stop`
+
+#### `seek`
+
+#### `create`
+
+#### `delete`
+
+#### `update_props`
+
+#### `add_track`
+
+#### `remove_track`
+
+#### `add_keyframe`
 
 #### `remove_keyframe`
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
-| `track_index` | number | Yes | Track index |
-| `keyframe_index` | number | Yes | Keyframe index |
-
 #### `update_keyframe`
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
-| `animation_name` | string | Yes | Animation name |
-| `track_index` | number | Yes | Track index |
-| `keyframe_index` | number | Yes | Keyframe index |
-| `time` | number | No | Keyframe time in seconds |
-| `value` | unknown | No | Keyframe value |
-| `transition` | number | No | Transition curve, 1.0 = linear |
 
 ### Examples
 
@@ -159,17 +85,14 @@ Query, control, and edit animations. Query: list_players, get_info, get_details,
 ```json
 // get_info
 {
-  "action": "get_info",
-  "node_path": "/root/Main/Player"
+  "action": "get_info"
 }
 ```
 
 ```json
 // get_details
 {
-  "action": "get_details",
-  "node_path": "/root/Main/Player",
-  "animation_name": "idle"
+  "action": "get_details"
 }
 ```
 
