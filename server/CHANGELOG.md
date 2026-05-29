@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.1](https://github.com/satelliteoflove/godot-mcp/compare/godot-mcp-v3.4.0...godot-mcp-v3.4.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* flatten discriminatedUnion schemas to satisfy MCP inputSchema constraints ([#214](https://github.com/satelliteoflove/godot-mcp/issues/214)) ([333dadf](https://github.com/satelliteoflove/godot-mcp/commit/333dadf815a8e0928e4e7d70fd47b07e352f2fd6))
+
 ## [3.4.0](https://github.com/satelliteoflove/godot-mcp/compare/godot-mcp-v3.3.1...godot-mcp-v3.4.0) (2026-05-29)
 
 
