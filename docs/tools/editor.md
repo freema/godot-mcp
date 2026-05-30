@@ -21,7 +21,7 @@ Control the Godot editor: get state, manage selection, run/stop project, capture
 | `scene_path` | string | No | Scene to run (optional, defaults to main scene) |
 | `clear` | boolean | No | Clear buffer after reading |
 | `limit` | integer | No | Maximum number of messages to return (default: 50) |
-| `max_width` | integer | No | Maximum width in pixels (default: 1024) |
+| `max_width` | integer | No | Maximum width in pixels (default: 900) |
 | `quality` | integer | No | JPEG quality 1-100 (default: 75) |
 | `viewport` | `2d`, `3d` | No | Which editor viewport to capture |
 | `center_x` | number | No | X coordinate to center the 2D viewport on |
