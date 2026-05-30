@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.1](https://github.com/satelliteoflove/godot-mcp/compare/godot-mcp-v3.6.0...godot-mcp-v3.6.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* reduce default screenshot max_width from 1024 to 900 ([#221](https://github.com/satelliteoflove/godot-mcp/issues/221)) ([2c15902](https://github.com/satelliteoflove/godot-mcp/commit/2c1590267057477f22c813c66a903bd3faf60b8f))
+
 ## [3.6.0](https://github.com/satelliteoflove/godot-mcp/compare/godot-mcp-v3.5.0...godot-mcp-v3.6.0) (2026-05-30)
 
 
