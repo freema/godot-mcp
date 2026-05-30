@@ -2,7 +2,7 @@
 extends MCPBaseCommand
 class_name MCPScreenshotCommands
 
-const DEFAULT_MAX_WIDTH := 1024
+const DEFAULT_MAX_WIDTH := 900
 const DEFAULT_JPEG_QUALITY := 75
 const SCREENSHOT_TIMEOUT := 5.0
 
