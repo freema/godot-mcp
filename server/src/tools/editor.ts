@@ -55,13 +55,13 @@ const EditorSchema = z
     z.object({ action: z.literal('get_stack_trace').describe('Get the most recent error stack trace') }),
     z.object({
       action: z.literal('screenshot_game').describe('Capture a JPEG screenshot of the running game'),
-      max_width: z.number().int().optional().describe('Maximum width in pixels (default: 1024)'),
+      max_width: z.number().int().optional().describe('Maximum width in pixels (default: 900)'),
       quality: z.number().int().min(1).max(100).optional().describe('JPEG quality 1-100 (default: 75)'),
     }),
     z.object({
       action: z.literal('screenshot_editor').describe('Capture a JPEG screenshot of an editor viewport'),
       viewport: z.enum(['2d', '3d']).optional().describe('Which editor viewport to capture'),
-      max_width: z.number().int().optional().describe('Maximum width in pixels (default: 1024)'),
+      max_width: z.number().int().optional().describe('Maximum width in pixels (default: 900)'),
       quality: z.number().int().min(1).max(100).optional().describe('JPEG quality 1-100 (default: 75)'),
     }),
     z.object({
