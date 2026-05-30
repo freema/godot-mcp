@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.0](https://github.com/satelliteoflove/godot-mcp/compare/godot-mcp-v3.5.0...godot-mcp-v3.6.0) (2026-05-30)
+
+
+### Features
+
+* runtime_state tool (digest + state-over-time + selection tiers) ([#219](https://github.com/satelliteoflove/godot-mcp/issues/219)) ([a703aa8](https://github.com/satelliteoflove/godot-mcp/commit/a703aa8c0492e39fb776c95bea2a75e9f873f35d))
+
 ## [3.5.0](https://github.com/satelliteoflove/godot-mcp/compare/godot-mcp-v3.4.1...godot-mcp-v3.5.0) (2026-05-29)
 
 
