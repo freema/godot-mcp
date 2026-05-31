@@ -68,12 +68,13 @@ func capture_editor_screenshot(params: Dictionary) -> Dictionary:
 
 	var viewport: SubViewport = null
 
-	if viewport_type == "2d":
-		viewport = _find_2d_viewport()
-	elif viewport_type == "3d":
-		viewport = _find_3d_viewport()
-	else:
-		viewport = _find_active_viewport()
+	match viewport_type:
+		"2d":
+			viewport = EditorInterface.get_editor_viewport_2d()
+		"3d":
+			viewport = EditorInterface.get_editor_viewport_3d(0)
+		_:
+			viewport = _find_active_viewport()
 
 	if viewport == null:
 		return _error("NO_VIEWPORT", "Could not find editor viewport")
@@ -101,47 +102,29 @@ func _process_and_encode_image(image: Image, max_width: int, quality: float = 0.
 	})
 
 
+# Returns the SubViewport of whichever main-screen tab (2D or 3D) is currently
+# active. EditorInterface always hands back both viewports regardless of the
+# active tab, so we pick the one whose editor panel is actually on screen. When
+# neither is active (e.g. the Script or AssetLib tab is selected) we fall back to
+# the 2D canvas so the call still returns an image rather than erroring.
 func _find_active_viewport() -> SubViewport:
-	var viewport := _find_3d_viewport()
-	if viewport:
-		return viewport
-	return _find_2d_viewport()
+	var v2d := EditorInterface.get_editor_viewport_2d()
+	if v2d and _viewport_on_active_tab(v2d):
+		return v2d
+
+	var v3d := EditorInterface.get_editor_viewport_3d(0)
+	if v3d and _viewport_on_active_tab(v3d):
+		return v3d
+
+	return v2d if v2d else v3d
 
 
-func _find_2d_viewport() -> SubViewport:
-	var editor_main := EditorInterface.get_editor_main_screen()
-	return _find_viewport_in_tree(editor_main, "2D")
-
-
-func _find_3d_viewport() -> SubViewport:
-	var editor_main := EditorInterface.get_editor_main_screen()
-	return _find_viewport_in_tree(editor_main, "3D")
-
-
-func _find_viewport_in_tree(node: Node, hint: String) -> SubViewport:
-	if node is SubViewportContainer:
-		# Walk up the parent chain to find a node whose name matches the hint
-		# (e.g. "3D" for the 3D viewport panel, "2D" for the 2D viewport panel).
-		# This prevents returning the wrong SubViewport when multiple exist.
-		var matches_hint := true
-		if not hint.is_empty():
-			matches_hint = false
-			var ancestor := node.get_parent()
-			while ancestor != null:
-				if ancestor.name.containsn(hint):
-					matches_hint = true
-					break
-				ancestor = ancestor.get_parent()
-
-		if matches_hint:
-			var container := node as SubViewportContainer
-			for child in container.get_children():
-				if child is SubViewport:
-					return child as SubViewport
-
-	for child in node.get_children():
-		var result := _find_viewport_in_tree(child, hint)
-		if result:
-			return result
-
-	return null
+# A main-screen editor panel (and the viewport nested inside it) is hidden when
+# its tab is not the selected one. is_visible_in_tree() on the viewport's
+# container is true only when every ancestor is visible, i.e. this is the active
+# tab.
+func _viewport_on_active_tab(viewport: SubViewport) -> bool:
+	var container := viewport.get_parent()
+	if container is CanvasItem:
+		return (container as CanvasItem).is_visible_in_tree()
+	return true
