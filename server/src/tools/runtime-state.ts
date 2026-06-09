@@ -40,10 +40,20 @@ interface WatchRawSample {
   value: number | string;
 }
 
+interface WatchRawEvent {
+  t_ms: number;
+  source: string;
+  signal: string;
+  args?: string;
+}
+
 interface WatchRawResponse {
   window_ms: number;
   sample_count: number;
   fields: Record<string, WatchRawSample[]>;
+  // Absent from pre-timeline addon versions.
+  events?: WatchRawEvent[];
+  events_truncated?: boolean;
 }
 
 // ── Server-side summarization helpers ───────────────────────────────────────
@@ -124,6 +134,77 @@ function summarizeWatchRaw(raw: WatchRawResponse): Record<string, NumericFieldSu
       : summarizeStringField(samples);
   }
   return result;
+}
+
+export type TimelineEntry =
+  | { t_ms: number; kind: 'signal'; source: string; name: string; args?: string }
+  | { t_ms: number; kind: 'anim_transition'; source: string; from: string; to: string }
+  | { t_ms: number; kind: 'field_change'; source: string; field: string; from: string; to: string };
+
+const TIMELINE_KIND_RANK: Record<TimelineEntry['kind'], number> = {
+  // PRESENTATION order for same-t_ms entries, not chronology: cross-kind order
+  // at a tie is unknowable (signal t_ms is emission time, sampled t_ms is
+  // detection time — the change may have happened earlier). Any fixed choice
+  // is fine; what matters is determinism.
+  signal: 0,
+  anim_transition: 1,
+  field_change: 2,
+};
+
+export function buildTimeline(
+  events: WatchRawEvent[],
+  fields: Record<string, NumericFieldSummary | StringFieldSummary>
+): TimelineEntry[] {
+  const timeline: TimelineEntry[] = [];
+
+  for (const e of events) {
+    timeline.push({
+      t_ms: e.t_ms,
+      kind: 'signal',
+      source: e.source,
+      name: e.signal,
+      ...(e.args !== undefined && { args: e.args }),
+    });
+  }
+
+  for (const [key, summary] of Object.entries(fields)) {
+    if (!('changes' in summary)) continue; // numeric events stay per-field only
+    // full_key is node_path + ":" + field_key; lastIndexOf guards colons in paths.
+    const sep = key.lastIndexOf(':');
+    const source = sep >= 0 ? key.slice(0, sep) : key;
+    const field = sep >= 0 ? key.slice(sep + 1) : key;
+    for (const change of summary.changes) {
+      timeline.push(
+        field === 'anim'
+          ? { t_ms: change.t_ms, kind: 'anim_transition', source, from: change.from, to: change.to }
+          : { t_ms: change.t_ms, kind: 'field_change', source, field, from: change.from, to: change.to }
+      );
+    }
+  }
+
+  // No further tiebreakers on purpose: sort() is spec-stable (ES2019), so
+  // same-t_ms same-kind entries keep buffer order — which for signals IS
+  // emission order, real information a name/source tiebreak would destroy
+  // (sub-ms bursts land on one t_ms).
+  timeline.sort((a, b) => {
+    if (a.t_ms !== b.t_ms) return a.t_ms - b.t_ms;
+    return TIMELINE_KIND_RANK[a.kind] - TIMELINE_KIND_RANK[b.kind];
+  });
+
+  return timeline;
+}
+
+function summarizeWatchResponse(raw: WatchRawResponse) {
+  const fields = summarizeWatchRaw(raw);
+  return structured({
+    window_ms: raw.window_ms,
+    sample_count: raw.sample_count,
+    fields,
+    // Always present (empty array included) so the shape is stable for
+    // structured readers; `?? []` degrades gracefully against older addons.
+    timeline: buildTimeline(raw.events ?? [], fields),
+    timeline_truncated: raw.events_truncated ?? false,
+  });
 }
 
 // ── Schema ───────────────────────────────────────────────────────────────────
@@ -208,7 +289,33 @@ const RuntimeStateSchema = z.discriminatedUnion('action', [
             .describe('Field keys to sample (e.g. ["pos.x", "vel.x", "health"])'),
         })
       )
-      .describe('Which nodes and fields to watch'),
+      .optional()
+      .describe('Which nodes and fields to watch. Optional when signals is provided.'),
+    signals: z
+      .array(
+        z.object({
+          path: z
+            .string()
+            .min(1)
+            .describe('Node path; absolute /root/... paths reach autoloads (e.g. "/root/G")'),
+          signal: z
+            .string()
+            .min(1)
+            .describe('Signal name on that node — script or built-in (e.g. "body_entered")'),
+        })
+      )
+      .max(16)
+      .optional()
+      .describe(
+        'Signals to record as discrete timeline events during the window. Each emission is ' +
+        'buffered as {t_ms, source, signal, args} (max 200 events/window, then truncated with a ' +
+        'flag; args stringified to ~100 chars). watch_collect merges these with string-field ' +
+        'transitions into a time-sorted `timeline`. Signals with more than 5 parameters are ' +
+        'skipped and reported in unresolved_signals, as are bad paths/names. Connections stay ' +
+        'live until duration_ms elapses or watch_stop. Signals must be emitted on the main ' +
+        'thread (worker-thread emissions are unsupported). At least one of specs/signals is ' +
+        'required.'
+      ),
     hz: z
       .number()
       .int()
@@ -223,22 +330,30 @@ const RuntimeStateSchema = z.discriminatedUnion('action', [
       .max(5000)
       .optional()
       .describe('Auto-stop after this many milliseconds (default: 1000)'),
+  }).refine((v) => (v.specs?.length ?? 0) > 0 || (v.signals?.length ?? 0) > 0, {
+    message: 'watch_start requires at least one of specs or signals',
   }),
   z.object({
     action: z
       .literal('watch_collect')
       .describe(
-        'Collect the current sampler buffer and return a per-field summary: ' +
-        'start/end/min/max/mean/slope for numeric fields; transition events for string fields. ' +
-        'Safe to call before auto-stop — returns whatever has been sampled so far.'
+        'Collect the current sampler buffer and return a per-field summary ' +
+        '(start/end/min/max/mean/slope for numeric fields; transition events for string fields) ' +
+        'plus a time-sorted `timeline` merging watched signal emissions with string-field ' +
+        'transitions (kinds: signal, anim_transition, field_change). TIMESTAMPS: signal t_ms is ' +
+        'emission time (ms resolution); anim/field t_ms is DETECTION time at the sample rate — ' +
+        'the change happened up to one sample interval earlier, so do not infer cross-kind ' +
+        'ordering from nearby timestamps. ' +
+        'Safe to call before auto-stop — returns whatever has been recorded so far; ' +
+        'signal connections stay live until the window ends.'
       ),
   }),
   z.object({
     action: z
       .literal('watch_stop')
       .describe(
-        'Stop the sampler early and return the final per-field summary. ' +
-        'Equivalent to watch_collect + stopping the sampler.'
+        'Stop the sampler early (disconnecting watched signals) and return the final ' +
+        'per-field summary and merged `timeline`. Equivalent to watch_collect + stopping the sampler.'
       ),
   }),
 ]);
@@ -278,28 +393,62 @@ export const runtimeState = defineTool({
       }
 
       case 'watch_start': {
-        const watchResult = await godot.sendCommand<{ started: boolean; resolved_fields?: number }>('watch_start', {
-          specs: args.specs,
+        const watchResult = await godot.sendCommand<{
+          started: boolean;
+          resolved_fields?: number;
+          connected_signals?: number;
+          unresolved_signals?: Array<{ path: string; signal: string; reason: string }>;
+        }>('watch_start', {
+          specs: args.specs ?? [],
           hz: args.hz ?? 20,
           duration_ms: args.duration_ms ?? 1000,
+          signals: args.signals ?? [],
         });
-        const base = `Sampler started. Call watch_collect after ~${args.duration_ms ?? 1000}ms to get results.`;
-        if ((watchResult.resolved_fields ?? 1) === 0) {
-          return base + ' Warning: 0 fields resolved — verify that all node paths in specs exist in the running scene.';
+        const wantFields = (args.specs?.length ?? 0) > 0;
+        const requestedSignals = args.signals?.length ?? 0;
+        const unresolved = watchResult.unresolved_signals ?? [];
+        const warnings: string[] = [];
+        if (wantFields && (watchResult.resolved_fields ?? 0) === 0) {
+          warnings.push('0 fields resolved — verify that all node paths in specs exist in the running scene.');
         }
-        return `${base} Tracking ${watchResult.resolved_fields} field(s).`;
+        if (requestedSignals > 0) {
+          // Version-skew detection: without it, dropped signal specs read as
+          // "Connected 0 signal(s)" + an empty timeline, and the agent
+          // concludes the signals never fired — a confident lie about game
+          // behavior. Both stale layers are precisely distinguishable here.
+          if (watchResult.connected_signals === undefined) {
+            warnings.push(
+              'signals were IGNORED: the running addon predates the signal timeline feature — update the godot-mcp addon.'
+            );
+          } else if (watchResult.connected_signals + unresolved.length < requestedSignals) {
+            warnings.push(
+              `${requestedSignals - watchResult.connected_signals - unresolved.length} signal spec(s) were dropped in ` +
+              'transit: the addon on disk is newer than what the editor has loaded — restart the Godot editor.'
+            );
+          }
+          if (unresolved.length > 0) {
+            warnings.push(`unresolved signals: ${unresolved.map((u) => `${u.path}:${u.signal} (${u.reason})`).join(', ')}.`);
+          }
+        }
+        // Structured with a stable shape (unresolved_signals/warnings always
+        // arrays): an agent must branch on unresolved reasons to retry
+        // correctly, which prose can't carry reliably.
+        return structured({
+          started: watchResult.started,
+          note: `Sampler started. Call watch_collect after ~${args.duration_ms ?? 1000}ms to get results.`,
+          resolved_fields: watchResult.resolved_fields ?? 0,
+          connected_signals: watchResult.connected_signals ?? 0,
+          unresolved_signals: unresolved,
+          warnings,
+        });
       }
 
       case 'watch_collect': {
-        const raw = await godot.sendCommand<WatchRawResponse>('watch_collect');
-        const fields = summarizeWatchRaw(raw);
-        return structured({ window_ms: raw.window_ms, sample_count: raw.sample_count, fields });
+        return summarizeWatchResponse(await godot.sendCommand<WatchRawResponse>('watch_collect'));
       }
 
       case 'watch_stop': {
-        const raw = await godot.sendCommand<WatchRawResponse>('watch_stop');
-        const fields = summarizeWatchRaw(raw);
-        return structured({ window_ms: raw.window_ms, sample_count: raw.sample_count, fields });
+        return summarizeWatchResponse(await godot.sendCommand<WatchRawResponse>('watch_stop'));
       }
     }
   },
