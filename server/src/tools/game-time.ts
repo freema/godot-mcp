@@ -1,14 +1,33 @@
 import { z } from 'zod';
 import { defineTool } from '../core/define-tool.js';
 import { structured } from '../core/structured.js';
+import { deriveTimeouts, STEP_BUDGET_CAP_MS } from '../connection/timeouts.js';
 import { InputActionSchema } from './input.js';
 import type { AnyToolDefinition } from '../core/types.js';
 
-// Bridge-side step caps (see mcp_game_bridge.gd). The editor relay times out
-// at 28s and the server command timeout is 30s, so a step request must stay
-// well inside both.
-const STEP_MAX_MS = 20000;
+// Published cap on game time advanced in one call. The server sizes its socket
+// timeout from this budget and pushes the derived relay/wall budgets down to
+// the bridge (see timeouts.ts / mcp_game_bridge.gd), so the cap is a real
+// capability bound now, not a transport artifact.
+const STEP_MAX_MS = STEP_BUDGET_CAP_MS;
 const STEP_MAX_FRAMES = 1200;
+// step_until's max_ms is a safety net, not an expectation, so its default is
+// kept modest and decoupled from the cap: a forgotten or wrong predicate gives
+// up in ~20s, while an explicit max_ms unlocks the full window up to STEP_MAX_MS.
+const STEP_DEFAULT_MS = 20000;
+
+// Game-time budget (ms) this call advances at most, used to size the timeout
+// cascade. frames are converted at 60 fps (their wall cost at normal speed).
+function stepBudgetMs(args: GameTimeArgs): number {
+  if (args.action === 'step') {
+    if (args.duration_ms !== undefined) return args.duration_ms;
+    return Math.ceil(((args.frames ?? 0) * 1000) / 60);
+  }
+  if (args.action === 'step_until') {
+    return args.max_ms ?? STEP_DEFAULT_MS;
+  }
+  return STEP_DEFAULT_MS; // not reached: only step/step_until size a budget
+}
 
 const GameTimeSchema = z
   .discriminatedUnion('action', [
@@ -54,7 +73,7 @@ const GameTimeSchema = z
         .min(1)
         .max(STEP_MAX_MS)
         .optional()
-        .describe(`Safety cap on game time to advance while waiting (max ${STEP_MAX_MS}, default ${STEP_MAX_MS}). If the predicate never holds within this budget (or the wall-clock budget), the call returns with predicate_met: false instead of hanging.`),
+        .describe(`Safety cap on game time to advance while waiting (max ${STEP_MAX_MS}, default ${STEP_DEFAULT_MS}). If the predicate never holds within this budget (or the wall-clock budget), the call returns with predicate_met: false instead of hanging.`),
       report: z
         .array(z.string().min(1))
         .optional()
@@ -121,21 +140,27 @@ export const gameTime = defineTool({
       }
 
       case 'step': {
+        const t = deriveTimeouts(stepBudgetMs(args));
         const result = await godot.sendCommand<StepResult>('game_time_step', {
           duration_ms: args.duration_ms,
           frames: args.frames,
           inputs: args.inputs,
-        });
+          relay_timeout_ms: t.relayMs,
+          wall_budget_ms: t.bridgeWallMs,
+        }, { timeoutMs: t.serverMs });
         return structured(result);
       }
 
       case 'step_until': {
+        const t = deriveTimeouts(stepBudgetMs(args));
         const result = await godot.sendCommand<StepResult>('game_time_step_until', {
           until: args.until,
-          max_ms: args.max_ms,
+          max_ms: args.max_ms ?? STEP_DEFAULT_MS,
           report: args.report,
           inputs: args.inputs,
-        });
+          relay_timeout_ms: t.relayMs,
+          wall_budget_ms: t.bridgeWallMs,
+        }, { timeoutMs: t.serverMs });
         return structured(result);
       }
 

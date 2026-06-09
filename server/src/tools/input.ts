@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defineTool } from '../core/define-tool.js';
+import { deriveTimeouts, INPUT_BUDGET_CAP_MS } from '../connection/timeouts.js';
 import type { AnyToolDefinition, ToolResult } from '../core/types.js';
 
 export const InputActionSchema = z.object({
@@ -41,7 +42,8 @@ const InputSchema = z.discriminatedUnion('action', [
         'frame DURING the real-time run. The bridge owns the sequence clock, so it grabs each frame ' +
         'at the right moment and returns them with the result — letting you catch transient visuals ' +
         '(muzzle flashes, explosions, kill banners) that fade long before a separate screenshot ' +
-        'call could land. Up to 8 frames, each returned as an image labeled with its actual offset. ' +
+        'call could land. Up to 8 frames, each returned as an image labeled with its actual offset; ' +
+        `an offset (like the whole sequence) must fall within the ${INPUT_BUDGET_CAP_MS}ms single-call window. ` +
         'COST: each frame costs vision tokens by RESOLUTION (~width*height/750), independent of ' +
         'format, and persists in context on every following turn — so prefer a few frames at a ' +
         'modest screenshot_max_width over many large ones. For frozen/precise inspection prefer ' +
@@ -115,6 +117,22 @@ export const input = defineTool({
 
       case 'sequence': {
         const inputs = args.inputs!;
+
+        // Size the timeout cascade from how long the sequence actually runs:
+        // the last input's end, or a later capture offset. The bridge-ready
+        // wait precedes this call, so it is folded into the budget (readyWait).
+        const lastInputEnd = inputs.reduce((m, i) => Math.max(m, (i.start_ms ?? 0) + (i.duration_ms ?? 0)), 0);
+        const lastShot = (args.screenshot_at_ms ?? []).reduce((m, o) => Math.max(m, o), 0);
+        const budget = Math.max(lastInputEnd, lastShot);
+        const cap = INPUT_BUDGET_CAP_MS;
+        if (budget > cap) {
+          throw new Error(
+            `Input sequence spans ${budget}ms but a single call can cover at most ${cap}ms ` +
+            `(the transport ceiling). Split it into multiple sequences, or use godot_game_time to drive a longer window.`
+          );
+        }
+        const t = deriveTimeouts(budget, { readyWait: true });
+
         const result = await godot.sendCommand<{
           completed: boolean;
           actions_executed: number;
@@ -140,7 +158,11 @@ export const input = defineTool({
           report: args.report,
           screenshot_at_ms: args.screenshot_at_ms,
           screenshot_max_width: args.screenshot_max_width,
-        });
+          // The bridge's sequence path has no wall guard (the editor relay is its
+          // effective deadline), so only the relay budget is pushed; sizing the
+          // server socket from it is enough. wall_budget_ms is a step-only concept.
+          relay_timeout_ms: t.relayMs,
+        }, { timeoutMs: t.serverMs });
 
         if (result.error) {
           throw new Error(result.error);
@@ -212,12 +234,25 @@ export const input = defineTool({
       }
 
       case 'type_text': {
+        // Keystrokes are spaced by delay_ms; size the timeout from the total
+        // span (and the bridge-ready wait that precedes typing) so a long type
+        // can't hit the quick default and get killed mid-stream.
+        const budget = args.text.length * (args.delay_ms ?? 50);
+        const cap = INPUT_BUDGET_CAP_MS;
+        if (budget > cap) {
+          throw new Error(
+            `Typing ${args.text.length} chars at ${args.delay_ms ?? 50}ms each spans ${budget}ms, over the ` +
+            `${cap}ms single-call ceiling. Type in smaller chunks or lower delay_ms.`
+          );
+        }
+        const t = deriveTimeouts(budget, { readyWait: true });
+
         const result = await godot.sendCommand<{
           completed: boolean;
           chars_typed: number;
           submitted: boolean;
           error?: string;
-        }>('type_text', { text: args.text, delay_ms: args.delay_ms, submit: args.submit });
+        }>('type_text', { text: args.text, delay_ms: args.delay_ms, submit: args.submit, relay_timeout_ms: t.relayMs }, { timeoutMs: t.serverMs });
 
         if (result.error) {
           throw new Error(result.error);
