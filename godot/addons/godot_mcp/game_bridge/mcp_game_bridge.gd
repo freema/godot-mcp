@@ -374,6 +374,18 @@ func _on_debugger_message(message: String, data: Array) -> bool:
 		"game_time_status":
 			_handle_game_time_status(data)
 			return true
+		"exec_run":
+			_handle_exec_run(data)
+			return true
+		"exec_list":
+			_handle_exec_list(data)
+			return true
+		"exec_remove":
+			_handle_exec_remove(data)
+			return true
+		"exec_clear":
+			_handle_exec_clear(data)
+			return true
 	return false
 
 
@@ -1031,7 +1043,7 @@ func _list_autoload_paths(scene_root: Node) -> Array:
 	if tree == null or tree.root == null:
 		return out
 	for child in tree.root.get_children():
-		if child == scene_root or child == self:
+		if child == scene_root or child == self or child == _exec_holder:
 			continue
 		out.append("/root/" + str(child.name))
 	return out
@@ -1075,6 +1087,10 @@ func _handle_watch_stop() -> void:
 class _MCPGameLogger extends Logger:
 	var _output: PackedStringArray = []
 	var _max_lines := 1000
+	# Lines trimmed off the front of the ring buffer, ever. Lets a caller hold a
+	# STABLE mark (dropped + size) across trims instead of a raw index that
+	# silently drifts when the buffer overflows (exec's runtime-error window).
+	var _dropped := 0
 	var _mutex := Mutex.new()
 
 	func _log_message(message: String, error: bool) -> void:
@@ -1083,6 +1099,7 @@ class _MCPGameLogger extends Logger:
 		_output.append(prefix + message)
 		if _output.size() > _max_lines:
 			_output.remove_at(0)
+			_dropped += 1
 		_mutex.unlock()
 
 	func _log_error(function: String, file: String, line: int, code: String,
@@ -1093,13 +1110,18 @@ class _MCPGameLogger extends Logger:
 		_output.append("[ERROR] " + msg)
 		if _output.size() > _max_lines:
 			_output.remove_at(0)
+			_dropped += 1
 		_mutex.unlock()
 
 	func get_output() -> PackedStringArray:
 		return _output
 
+	func get_dropped() -> int:
+		return _dropped
+
 	func clear() -> void:
 		_mutex.lock()
+		_dropped += _output.size()  # cleared lines are gone the same as trimmed ones
 		_output.clear()
 		_mutex.unlock()
 
@@ -1844,3 +1866,213 @@ func _finish_step() -> void:
 	_step_predicate_inputs = []
 	_step_report = []
 	_send_game_time_response(response_type, result)
+
+
+# ── godot_exec: run agent-provided GDScript in this game process (#243) ───────
+#
+# One-shot scripts compile as the body of `_mcp_run(<bindings>)` (see
+# MCPExecGuard.build_wrapper) and run synchronously right here. Persistent
+# behaviors are nodes the script attaches under the `holder` binding — a child
+# of /root, NOT of this bridge: bridge children inherit PROCESS_MODE_ALWAYS and
+# would keep acting under a freeze, while a root child pauses with the tree
+# (bots respect freeze/step) yet survives scene reloads. The game process dying
+# on stop is the cleanup guarantee.
+
+# Cap on runtime-error lines echoed back per exec — the full text stays in the
+# game console either way.
+const EXEC_MAX_ERROR_LINES := 20
+
+var _exec_holder: Node = null
+
+
+func _exec_params(data: Array) -> Dictionary:
+	return data[0] if data.size() > 0 and data[0] is Dictionary else {}
+
+
+# Responses correlate by message type alone in the editor plugin, so a late
+# response from a timed-out call could be consumed as the answer to the NEXT
+# call of the same type — wrong result, silently. Echoing the relay's call_id
+# lets the relay discard mismatches. Absent when the relay pushed none (older
+# server): the relay accepts unmatched responses then, so skew is safe both ways.
+func _send_exec_response(msg_type: String, result: Dictionary, params: Dictionary) -> void:
+	if params.has("call_id"):
+		result["call_id"] = params["call_id"]
+	EngineDebugger.send_message("godot_mcp:game_response", [msg_type, result])
+
+
+func _ensure_exec_holder() -> Node:
+	if _exec_holder != null and is_instance_valid(_exec_holder):
+		return _exec_holder
+	_exec_holder = Node.new()
+	_exec_holder.name = "MCPExecHolder"
+	# Stamp attach time on whatever user scripts add, so exec_list can report an
+	# age without trusting the script to record one.
+	_exec_holder.child_entered_tree.connect(func(child: Node) -> void:
+		child.set_meta("mcp_exec_attached_ms", Time.get_ticks_msec()))
+	get_tree().root.add_child(_exec_holder)
+	return _exec_holder
+
+
+# A stable position in the logger stream (survives ring-buffer trims): lines
+# appended ever = dropped + currently held.
+func _exec_logger_mark() -> int:
+	return (_logger.get_dropped() + _logger.get_output().size()) if _logger else 0
+
+
+# The window of logger lines produced since `mark` (an _exec_logger_mark
+# value), error lines only. Process-wide, not per-script: a concurrent game
+# error inside the window rides along — acceptable for an honest "what went
+# wrong" echo. If the ring buffer trimmed past the mark (a >1000-line script),
+# the lost stretch is reported instead of silently misattributed.
+func _exec_logger_delta(mark: int) -> Array:
+	var out: Array = []
+	if _logger == null:
+		return out
+	var lines := _logger.get_output()
+	var start := mark - _logger.get_dropped()
+	if start < 0:
+		out.append("... (log buffer overflowed; %d earlier lines lost — see the game console)" % -start)
+		start = 0
+	for i in range(start, lines.size()):
+		if not lines[i].begins_with("[ERROR] "):
+			continue
+		if out.size() >= EXEC_MAX_ERROR_LINES:
+			out.append("... (more errors truncated; see the game console)")
+			break
+		out.append(lines[i].substr(8))
+	return out
+
+
+func _build_exec_context() -> Dictionary:
+	# The step_until predicate context (autoloads by name + tree/root), plus
+	# `holder`. If a project defines an autoload literally named "holder", the
+	# autoload keeps the name (a duplicate parameter would be a parse error);
+	# the exec holder is still reachable as root.get_node("MCPExecHolder").
+	var ctx := _build_predicate_context()
+	var names: PackedStringArray = ctx["names"]
+	var inputs: Array = ctx["inputs"]
+	if not ("holder" in names):
+		names.append("holder")
+		inputs.append(_ensure_exec_holder())
+	return {"names": names, "inputs": inputs}
+
+
+func _handle_exec_run(data: Array) -> void:
+	var params := _exec_params(data)
+	var source: String = str(params.get("source", ""))
+
+	var scan := MCPExecGuard.scan_source(source)
+	if not scan.get("ok", false):
+		_send_exec_response("exec_run", {"error": str(scan.get("message", "exec source rejected"))}, params)
+		return
+
+	var ctx := _build_exec_context()
+	var script := GDScript.new()
+	script.source_code = MCPExecGuard.build_wrapper(source, ctx["names"])
+
+	var mark := _exec_logger_mark()
+	if script.reload() != OK or not script.can_instantiate():
+		var detail := "; ".join(PackedStringArray(_exec_logger_delta(mark)))
+		var msg := "exec compile error"
+		if detail.is_empty():
+			msg += " (parser text not captured; check the game console, e.g. minimal-godot-mcp get_console_output)"
+		else:
+			msg += ": " + detail
+		_send_exec_response("exec_run", {"error": msg}, params)
+		return
+
+	var inst: Object = script.new()
+	mark = _exec_logger_mark()
+	var t0 := Time.get_ticks_msec()
+	# Synchronous and non-preemptible: an infinite loop here hangs the game (the
+	# relay/server time out; godot_editor stop kills the process). That is the
+	# documented contract — no wall budget is pretended.
+	var result: Variant = inst.callv("_mcp_run", ctx["inputs"])
+	var duration := Time.get_ticks_msec() - t0
+
+	# Runtime backstop for the scanner's SYNC_ONLY rule (a string-built await
+	# can slip past a token scan): a suspended call returns a function state.
+	if typeof(result) == TYPE_OBJECT and result != null \
+			and result.get_class() == "GDScriptFunctionState":
+		_send_exec_response("exec_run", {"error":
+			"SCRIPT_SUSPENDED: the script hit an await and suspended (exec is synchronous-only; " +
+			"side effects before the await have already run). Use godot_game_time step/step_until to wait."}, params)
+		return
+
+	var out: Dictionary = {
+		"completed": true,
+		"result": _sanitize_value(result),
+		"duration_ms": duration,
+		"holder_children": _exec_holder.get_child_count() \
+			if _exec_holder != null and is_instance_valid(_exec_holder) else 0,
+	}
+	var errs := _exec_logger_delta(mark)
+	if not errs.is_empty():
+		out["runtime_errors"] = errs
+	_send_exec_response("exec_run", out, params)
+
+
+func _handle_exec_list(data: Array) -> void:
+	var params := _exec_params(data)
+	var nodes: Array = []
+	if _exec_holder != null and is_instance_valid(_exec_holder):
+		var now := Time.get_ticks_msec()
+		for child in _exec_holder.get_children():
+			var script_chars := 0
+			var s: Variant = child.get_script()
+			if s is GDScript:
+				script_chars = (s as GDScript).source_code.length()
+			nodes.append({
+				"name": str(child.name),
+				"class": child.get_class(),
+				"script_chars": script_chars,
+				"age_ms": now - int(child.get_meta("mcp_exec_attached_ms", now)),
+				# Internal processing too: Timers and tweened nodes drive
+				# themselves internally and would otherwise read as idle.
+				"processing": child.is_processing() or child.is_physics_processing() \
+					or child.is_processing_internal() or child.is_physics_processing_internal(),
+			})
+	_send_exec_response("exec_list", {"nodes": nodes, "count": nodes.size()}, params)
+
+
+func _handle_exec_remove(data: Array) -> void:
+	var params := _exec_params(data)
+	var node_name := str(params.get("name", ""))
+	var child: Node = null
+	if _exec_holder != null and is_instance_valid(_exec_holder) and not node_name.is_empty():
+		# Name EQUALITY against direct children — never a NodePath lookup: a
+		# path-like name would traverse out of the holder (".." resolves to
+		# /root, "a/b" to a grandchild) and queue_free whatever it lands on.
+		for c in _exec_holder.get_children():
+			if str(c.name) == node_name:
+				child = c
+				break
+	if child == null:
+		var have: Array = []
+		if _exec_holder != null and is_instance_valid(_exec_holder):
+			for c in _exec_holder.get_children():
+				have.append(str(c.name))
+		_send_exec_response("exec_remove", {"error":
+			"NOT_FOUND: no exec node named '%s' (have: %s)" % [
+				node_name, ", ".join(PackedStringArray(have)) if not have.is_empty() else "none"]}, params)
+		return
+	# Detach immediately so a list right after this call already shows it gone;
+	# queue_free still frees the detached node at the end of the frame.
+	_exec_holder.remove_child(child)
+	child.queue_free()
+	_send_exec_response("exec_remove", {
+		"removed": true,
+		"name": node_name,
+		"remaining": _exec_holder.get_child_count(),
+	}, params)
+
+
+func _handle_exec_clear(data: Array) -> void:
+	var params := _exec_params(data)
+	var removed := 0
+	if _exec_holder != null and is_instance_valid(_exec_holder):
+		for child in _exec_holder.get_children():
+			_exec_holder.remove_child(child)
+			child.queue_free()
+			removed += 1
+	_send_exec_response("exec_clear", {"removed_count": removed}, params)
