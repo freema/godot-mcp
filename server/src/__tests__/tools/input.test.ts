@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createMockGodot, createToolContext, MockGodotConnection } from '../helpers/mock-godot.js';
 import { input } from '../../tools/input.js';
+import { toInputSchema } from '../../core/schema.js';
 import { deriveTimeouts, INPUT_BUDGET_CAP_MS } from '../../connection/timeouts.js';
 
 describe('input tool', () => {
@@ -597,6 +598,132 @@ describe('input tool', () => {
       }, ctx);
 
       expect(result).not.toContain('IGNORED');
+    });
+  });
+
+  describe('look entries (#294)', () => {
+    describe('schema', () => {
+      it('accepts a look delta, with and without a sweep duration', () => {
+        expect(input.schema.safeParse({
+          action: 'sequence',
+          inputs: [{ look: [10, -4] }, { look: [200, 0], duration_ms: 500 }],
+        }).success).toBe(true);
+      });
+
+      it('rejects a look with the wrong arity or a non-number payload', () => {
+        expect(input.schema.safeParse({
+          action: 'sequence',
+          inputs: [{ look: [1] }],
+        }).success).toBe(false);
+        expect(input.schema.safeParse({
+          action: 'sequence',
+          inputs: [{ look: [1, 2, 3] }],
+        }).success).toBe(false);
+        expect(input.schema.safeParse({
+          action: 'sequence',
+          inputs: [{ look: 'x' }],
+        }).success).toBe(false);
+      });
+
+      it('rejects a look entry mixed with another discriminator (strictObject pin)', () => {
+        expect(input.schema.safeParse({
+          action: 'sequence',
+          inputs: [{ look: [1, 2], key: 'a' }],
+        }).success).toBe(false);
+        expect(input.schema.safeParse({
+          action: 'sequence',
+          inputs: [{ action_name: 'fire', look: [1, 2] }],
+        }).success).toBe(false);
+      });
+
+      it('names the look shape in the union error for a no-discriminator entry', () => {
+        const r = input.schema.safeParse({ action: 'sequence', inputs: [{ nope: 1 }] });
+        expect(r.success).toBe(false);
+        if (!r.success) expect(JSON.stringify(r.error.issues)).toContain('{look: [dx, dy]}');
+      });
+    });
+
+    it('passes a look entry through to the wire verbatim (the bridge chunks any sweep)', async () => {
+      mock.mockResponse({ completed: true, actions_executed: 1, input_kinds: { action: 0, joy_button: 0, axis: 0, key: 0, look: 1 } });
+      const ctx = createToolContext(mock);
+
+      const result = await input.execute({
+        action: 'sequence',
+        inputs: [{ look: [200, 0], start_ms: 0, duration_ms: 500 }],
+      }, ctx);
+
+      expect(mock.calls[0].params.inputs).toEqual([
+        { look: [200, 0], start_ms: 0, duration_ms: 500 },
+      ]);
+      expect(result).toContain('look:200,0');
+    });
+
+    it('labels a look entry (with a negative delta) in the summary line', async () => {
+      mock.mockResponse({ completed: true, actions_executed: 1, input_kinds: { action: 0, joy_button: 0, axis: 0, key: 0, look: 1 } });
+      const ctx = createToolContext(mock);
+
+      const result = await input.execute({
+        action: 'sequence',
+        inputs: [{ look: [3, -4], start_ms: 0, duration_ms: 0 }],
+      }, ctx);
+
+      expect(result).toContain('look:3,-4');
+    });
+
+    it('warns when look entries hit a bridge that echoes input_kinds without a look count', async () => {
+      // A #290-era bridge echoes input_kinds (so the key check passes) yet
+      // silently drops look entries — only the missing `look` count catches it.
+      mock.mockResponse({ completed: true, actions_executed: 0, input_kinds: { action: 0, joy_button: 0, axis: 0, key: 0 } });
+      const ctx = createToolContext(mock);
+
+      const result = await input.execute({
+        action: 'sequence',
+        inputs: [{ look: [100, 0], start_ms: 0, duration_ms: 100 }],
+      }, ctx);
+
+      expect(result).toContain('IGNORED');
+      expect(result).toContain('predates mouse-look injection');
+    });
+
+    it('does not warn when the bridge echoes a look count', async () => {
+      mock.mockResponse({ completed: true, actions_executed: 1, input_kinds: { action: 0, joy_button: 0, axis: 0, key: 0, look: 1 } });
+      const ctx = createToolContext(mock);
+
+      const result = await input.execute({
+        action: 'sequence',
+        inputs: [{ look: [50, 50], start_ms: 0, duration_ms: 100 }],
+      }, ctx);
+
+      expect(result).not.toContain('IGNORED');
+    });
+  });
+
+  describe('JSON Schema draft 2020-12 compliance', () => {
+    // The Anthropic API validates a tool's inputSchema against JSON Schema draft
+    // 2020-12, where `items` must be a single schema (tuples use `prefixItems`) and
+    // `additionalItems` does not exist. The converter (core/schema.ts) emits
+    // draft-07, so a z.tuple() anywhere in this tool compiles to the invalid
+    // `items: [..]` tuple form and the API rejects the ENTIRE tool at connect time
+    // (a failure invisible to safeParse and only seen live). Walk the converted
+    // schema so that class of bug fails here instead. See the `look` entry, which
+    // uses z.array(z.number()).length(2) for exactly this reason.
+    function findDraft07TupleViolations(node: unknown, path: string, out: string[]): void {
+      if (Array.isArray(node)) {
+        node.forEach((v, i) => findDraft07TupleViolations(v, `${path}[${i}]`, out));
+        return;
+      }
+      if (node && typeof node === 'object') {
+        const obj = node as Record<string, unknown>;
+        if (Array.isArray(obj.items)) out.push(`${path}.items is an array (draft-07 tuple form)`);
+        if ('additionalItems' in obj) out.push(`${path}.additionalItems present (draft-07 only)`);
+        for (const [k, v] of Object.entries(obj)) findDraft07TupleViolations(v, `${path}.${k}`, out);
+      }
+    }
+
+    it('converts to an input schema free of draft-07 tuple constructs (no z.tuple)', () => {
+      const violations: string[] = [];
+      findDraft07TupleViolations(toInputSchema(input.schema), '$', violations);
+      expect(violations).toEqual([]);
     });
   });
 

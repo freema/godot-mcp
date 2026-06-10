@@ -1196,6 +1196,9 @@ func _event_to_string(event: InputEvent) -> String:
 		# binding straight into an injection (e.g. move_left = left_x, value -1.0).
 		var joy_motion := event as InputEventJoypadMotion
 		return "Joypad Axis %d (%s, value %+.1f)" % [joy_motion.axis, MCPJoyNames.axis_name(joy_motion.axis), joy_motion.axis_value]
+	elif event is InputEventMouseMotion:
+		var mouse_motion := event as InputEventMouseMotion
+		return "Mouse Motion (rel %+.1f, %+.1f)" % [mouse_motion.relative.x, mouse_motion.relative.y]
 	return event.as_text()
 
 
@@ -1380,6 +1383,12 @@ const STEP_MAX_FRAMES := 1200
 const STEP_WALL_BUDGET_MS := 25000
 const STEP_MAX_TRANSITIONS := 50
 const FREEZE_CONTESTED_THRESHOLD := 10
+# Cap on the sub-events one mouse-look sweep entry expands into. Without it a
+# max-span sweep (duration_ms 40000) would emit ceil(40000/16) ~= 2500 events for
+# a single entry; 256 keeps ~16ms (60Hz) granularity up to ~4s and coarsens beyond
+# that. The last chunk absorbs the remainder regardless of n, so the summed delta
+# is unchanged — only temporal smoothness past the cap degrades.
+const LOOK_MAX_SUBEVENTS := 256
 
 var _frozen := false
 var _game_paused := false  # the game layer's own pause intent, inferred by observation
@@ -1579,9 +1588,9 @@ func _handle_game_time_step(data: Array) -> void:
 
 func _new_input_kinds() -> Dictionary:
 	# One source of truth for the input_kinds shape so every reset/result site
-	# carries the same keys (#290 added "key"). A missing key here would make the
-	# server's skew check misfire against our own bridge.
-	return {"action": 0, "joy_button": 0, "axis": 0, "key": 0}
+	# carries the same keys (#290 added "key", #294 added "look"). A missing key
+	# here would make the server's skew check misfire against our own bridge.
+	return {"action": 0, "joy_button": 0, "axis": 0, "key": 0, "look": 0}
 
 
 func _compile_input_events(inputs: Array) -> Dictionary:
@@ -1652,6 +1661,40 @@ func _compile_input_events(inputs: Array) -> Dictionary:
 			for mk in mod_keys:
 				events.append({"time": end_ms, "phase": 0, "complete": 0,
 					"kind": "key", "code": int(mk), "physical": false, "mask": 0, "is_press": false})
+		elif input.has("look"):
+			var look_val: Variant = input["look"]
+			if not (look_val is Array) or (look_val as Array).size() != 2:
+				return {"error": "look expects [dx, dy] (two numbers), got %s" % str(look_val)}
+			# Validate element types before casting, matching every other kind's clean
+			# error-dict contract: float() of a nested array throws an uncaught script
+			# error, and float() of a bool/string would silently coerce to a wrong value.
+			var lx: Variant = (look_val as Array)[0]
+			var ly: Variant = (look_val as Array)[1]
+			if not (lx is float or lx is int) or not (ly is float or ly is int):
+				return {"error": "look expects [dx, dy] (two numbers), got %s" % str(look_val)}
+			var dx: float = float(lx)
+			var dy: float = float(ly)
+			kinds["look"] += 1
+			# Relative mouse-look is STATELESS (no hold/release/refcount): a snap-turn
+			# (dur < 16) is ONE motion event carrying the whole delta; a longer sweep is
+			# N = ceil(dur/16) motion events (~16ms/chunk = 60Hz, capped at
+			# LOOK_MAX_SUBEVENTS) spaced across the window, each carrying delta/N. The
+			# last chunk absorbs the float remainder so the chunks sum to the delta
+			# (exact in float64; the delivered Vector2 is float32, so a very large sweep
+			# drifts sub-pixel — imperceptible). Motion is additive, so if several
+			# sub-events coalesce into one frame on a slow frame or a big step dt, the
+			# summed delta is unchanged — only the temporal smoothness degrades.
+			var n: int = clampi(int(ceil(float(dur) / 16.0)), 1, LOOK_MAX_SUBEVENTS)
+			var chunk_x: float = dx / float(n)
+			var chunk_y: float = dy / float(n)
+			for i in n:
+				var ex: float = chunk_x
+				var ey: float = chunk_y
+				if i == n - 1:
+					ex = dx - chunk_x * float(n - 1)
+					ey = dy - chunk_y * float(n - 1)
+				events.append({"time": start_ms + (i * dur) / n, "phase": 1,
+					"complete": (1 if i == n - 1 else 0), "kind": "look", "dx": ex, "dy": ey})
 		else:
 			var action_name: String = input.get("action_name", "")
 			if action_name.is_empty():
@@ -1769,6 +1812,26 @@ func _inject_timeline_event(ev: Dictionary) -> int:
 					Input.parse_input_event(_make_key_event(physical, code, int(ev.mask), false))
 				else:
 					_held_keys[kkey]["count"] = n
+		"look":
+			# Relative mouse-look is stateless: each event delivers its delta to
+			# _input/_unhandled_input and leaves NO held state to clean up (no
+			# registry, no guaranteed release). Set both relative and screen_relative
+			# to the delta — emulating a real mouse moving [dx,dy] SCREEN pixels: the
+			# engine scales the DELIVERED event.relative by the viewport's input
+			# transform on dispatch (identity for default/3D projects, so an FPS
+			# camera integrates exactly [dx,dy]; a 2D content-scale stretch scales it,
+			# as it would a physical mouse), while event.screen_relative stays the raw
+			# delta. position is the current cursor spot for a well-formed event
+			# (irrelevant under capture). The game owns mouse mode, not the bridge.
+			var mm := InputEventMouseMotion.new()
+			var delta := Vector2(float(ev.dx), float(ev.dy))
+			mm.relative = delta
+			mm.screen_relative = delta
+			var vp := get_viewport()
+			var pos := vp.get_mouse_position() if vp != null else Vector2.ZERO
+			mm.position = pos
+			mm.global_position = pos
+			Input.parse_input_event(mm)
 	return int(ev.get("complete", 0))
 
 
