@@ -787,7 +787,9 @@ func _handle_get_runtime_state(data: Array) -> void:
 
 	var hint := ""
 	if actual_selection == "fallback":
-		hint = ("No nodes found in group '%s' and no _mcp_state() methods detected. " +
+		hint = ("No nodes found in group '%s' and no _mcp_state() methods detected; " +
+			"showing visible 2D and 3D world nodes (meshes, gridmaps, cameras, lights, " +
+			"physics bodies and trigger areas, and visible CanvasItems). " +
 			"For richer data: add key nodes to the '%s' group, then implement " +
 			"`func _mcp_state() -> Dictionary` on them. " +
 			"In _mcp_state(), include both live runtime values (position, health, score) " +
@@ -846,7 +848,33 @@ func _collect_runtime_state(node: Node, scene_root: Node, selection: String, gro
 		"method":
 			include_node = node.has_method("_mcp_state")
 		"fallback":
-			include_node = (node is CanvasItem and (node as CanvasItem).is_visible_in_tree())
+			# Visible world nodes, by dimension. 2D = any visible CanvasItem.
+			# 3D = a curated set of the entities an agent actually cares about:
+			# rendered geometry (GeometryInstance3D covers MeshInstance3D,
+			# MultiMeshInstance3D, GPUParticles3D, Sprite3D, Label3D, CSG, SoftBody3D)
+			# plus Light3D (a VisualInstance3D, NOT a GeometryInstance3D, so named
+			# separately). GeometryInstance3D is deliberately narrower than its parent
+			# VisualInstance3D, which also drags in bake/helper nodes (ReflectionProbe,
+			# VoxelGI, LightmapGI, OccluderInstance3D, Decal, FogVolume, particle
+			# field nodes, VisibleOnScreenNotifier3D) — all default-visible noise that
+			# would crowd the max_nodes budget. GridMap (extends Node3D directly, NOT a
+			# VisualInstance3D) is checked by string because the gridmap module can be
+			# compiled out independently — `is GridMap` would be an unresolved parse-time
+			# identifier that fails the whole autoload in such a build. Camera3D (also a
+			# bare Node3D), and physics bodies / trigger areas (CollisionObject3D — the
+			# gameplay entities, e.g. an FPS's enemies and player) round out the set.
+			# Pure-structure Node3Ds (Marker3D, Skeleton3D, bone attachments, audio
+			# emitters, bare pivots) are skipped. This mirrors the 2D tier, where
+			# CharacterBody2D is itself a CanvasItem and so already surfaces.
+			if node is CanvasItem:
+				include_node = (node as CanvasItem).is_visible_in_tree()
+			elif node is Node3D:
+				include_node = (node as Node3D).is_visible_in_tree() and (
+					node is GeometryInstance3D
+					or node is Light3D
+					or node.is_class("GridMap")
+					or node is Camera3D
+					or node is CollisionObject3D)
 
 	if include_node:
 		if not name_filter.is_empty() and not node.name.matchn(name_filter):
