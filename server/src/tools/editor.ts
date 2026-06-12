@@ -8,6 +8,9 @@ interface ScreenshotResponse {
   image_base64: string;
   width: number;
   height: number;
+  // Mesh-integrity warnings piggybacked by the game bridge on the screenshot
+  // message itself (absent on clean scenes and older addons).
+  mesh_warnings?: string[];
 }
 
 interface CameraInfo {
@@ -247,7 +250,26 @@ export const editor = defineTool({
           'capture_game_screenshot',
           { max_width: args.max_width }
         );
-        return toImageContent(result.image_base64);
+        const image = toImageContent(result.image_base64);
+        // Mesh-integrity advisory: corrupt procedural meshes render as "too
+        // dark / invisible" with NO error anywhere, so an agent's first
+        // hypothesis is lighting and it tunes instead of validating. The
+        // warnings ride the screenshot response itself (no extra round-trip,
+        // no version-skew timeout) — the moment the agent LOOKS at the game
+        // is the moment they are actionable.
+        const warnings = result.mesh_warnings ?? [];
+        if (warnings.length > 0) {
+          return [
+            image,
+            {
+              type: 'text',
+              text:
+                `⚠ Mesh integrity: ${warnings.join(' | ')}. ` +
+                'If the render looks wrong, this is likely why — run godot_validate_meshes for causes and fixes before tuning lights/materials.',
+            },
+          ];
+        }
+        return image;
       }
 
       case 'screenshot_editor': {
