@@ -4,13 +4,14 @@ Node manipulation and script attachment tools
 
 ## Tools
 
-- [godot_node](#godot_node)
+- [godot_node_read](#godot_node_read)
+- [godot_node_edit](#godot_node_edit)
 
 ---
 
-## godot_node
+## godot_node_read
 
-Manage scene nodes: get properties, find, create, update, delete, reparent, attach/detach scripts, connect signals
+Inspect scene nodes in the editor: read a node's effective properties (including class defaults a .tscn read cannot show), view the full scene tree as the editor sees it (including children inside instanced sub-scenes), and find nodes by name or type. Use it to discover node paths and verify the live state of the open scene before or after making changes. It cannot modify anything; to update properties or reparent a node, use godot_node_edit.
 
 ### Actions
 
@@ -22,81 +23,24 @@ Get a node's properties
 |-----------|------|----------|-------------|
 | `node_path` | string | Yes | Path to the node |
 
+#### `get_scene_tree`
+
+Full hierarchy of the open scene as the editor sees it, including children inside instanced sub-scenes (a .tscn file read cannot show those). Deep or wide scenes can be large — cap the result with max_depth and/or max_children; any node whose children are cut off carries "truncated_children": <count of omitted direct children> instead of (or alongside) "children".
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `max_depth` | integer | No | Cap recursion depth (root = depth 1). Omit for the full tree. |
+| `max_children` | integer | No | Cap how many children are listed per node. Omit to list every child. |
+
 #### `find`
 
-Find nodes by name and/or type
+Find nodes by name and/or type. Searches the RUNNING game's live tree when a game is playing (spawned entities included); otherwise searches the scene open in the editor.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name_pattern` | string | No | Glob pattern to match node names, e.g. "*Spawner*", "Turret?" |
 | `type` | string | No | Filter by node type, e.g. "CharacterBody2D", "Area2D" |
 | `root_path` | string | No | Path to start search from (defaults to scene root) |
-
-#### `create`
-
-Create a node, or instantiate a scene as a node
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `parent_path` | string | Yes | Path to the parent node |
-| `node_name` | string | Yes | Name for the new node |
-| `node_type` | string | No | Type of node to create, e.g. "Sprite2D" (use this OR scene_path) |
-| `scene_path` | string | No | Path to scene to instantiate, e.g. "res://enemies/goblin.tscn" (use this OR node_type) |
-| `properties` | Record<string, unknown> | No | Properties to set on the node |
-
-#### `update`
-
-Update a node's properties
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the node |
-| `properties` | Record<string, unknown> | No | Properties to set on the node |
-
-#### `delete`
-
-Delete a node
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the node |
-
-#### `reparent`
-
-Move a node to a new parent
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the node |
-| `new_parent_path` | string | Yes | Path to the new parent node |
-
-#### `attach_script`
-
-Attach a script to a node
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the node |
-| `script_path` | string | Yes | Path to the script file |
-
-#### `detach_script`
-
-Detach a node's script
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the node |
-
-#### `connect_signal`
-
-Connect a signal to a target method
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the node emitting the signal |
-| `signal_name` | string | Yes | Name of the signal, e.g. "pressed", "body_entered" |
-| `target_path` | string | Yes | Path to the target node that will receive the signal |
-| `method_name` | string | Yes | Name of the method to call on the target node |
 
 ### Examples
 
@@ -109,6 +53,13 @@ Connect a signal to a target method
 ```
 
 ```json
+// get_scene_tree
+{
+  "action": "get_scene_tree"
+}
+```
+
+```json
 // find
 {
   "action": "find",
@@ -116,17 +67,51 @@ Connect a signal to a target method
 }
 ```
 
+---
+
+## godot_node_edit
+
+Modify scene nodes in the editor: update a node's properties, or reparent it (the editor rewrites child paths and signal connections correctly; hand-editing .tscn for a reparent does not). Use it to change existing nodes in the open scene. To inspect properties, the scene tree, or search for nodes, use godot_node_read; to add or remove nodes, or attach scripts and connect signals, edit the .tscn file directly, then verify with godot_node_read's get_scene_tree.
+
+### Actions
+
+#### `update`
+
+Update a node's properties
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `node_path` | string | Yes | Path to the node |
+| `properties` | Record<string, unknown> | Yes | Properties to set on the node |
+
+#### `reparent`
+
+Move a node to a new parent
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `node_path` | string | Yes | Path to the node |
+| `new_parent_path` | string | Yes | Path to the new parent node |
+
+### Examples
+
 ```json
-// create
+// update
 {
-  "action": "create",
-  "parent_path": "/root/Main",
-  "node_name": "NewNode",
-  "node_type": "Sprite2D"
+  "action": "update",
+  "node_path": "/root/Main/Player",
+  "properties": {}
 }
 ```
 
-*6 more actions available: `update`, `delete`, `reparent`, `attach_script`, `detach_script`, `connect_signal`*
+```json
+// reparent
+{
+  "action": "reparent",
+  "node_path": "/root/Main/Player",
+  "new_parent_path": "/root/UI"
+}
+```
 
 ---
 

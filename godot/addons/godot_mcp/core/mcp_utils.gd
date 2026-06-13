@@ -105,30 +105,6 @@ static func _create_resource(spec: Dictionary) -> Resource:
 	return resource
 
 
-static func is_resource_path(path: String) -> bool:
-	return path.begins_with("res://")
-
-
-static func dir_exists(path: String) -> bool:
-	if path.is_empty():
-		return false
-	if is_resource_path(path):
-		var dir := DirAccess.open("res://")
-		return dir != null and dir.dir_exists(path.trim_prefix("res://"))
-	return DirAccess.dir_exists_absolute(path)
-
-
-static func ensure_dir_exists(path: String) -> Error:
-	if dir_exists(path):
-		return OK
-	if is_resource_path(path):
-		var dir := DirAccess.open("res://")
-		if not dir:
-			return ERR_CANT_OPEN
-		return dir.make_dir_recursive(path.trim_prefix("res://"))
-	return DirAccess.make_dir_recursive_absolute(path)
-
-
 # ── project.godot staleness (#245) ────────────────────────────────────────────
 # The editor caches ProjectSettings / InputMap in memory at load. An agent that
 # edits project.godot as a file (batch-writing autoloads / input map) leaves the
@@ -136,7 +112,7 @@ static func ensure_dir_exists(path: String) -> Error:
 # errors that do not exist at runtime, and its input map is out of date — while
 # spawned games (which read disk fresh at launch) work fine. We detect that by
 # content-diffing the two sections that actually cause the trap, [autoload] and
-# [input], disk vs the editor's in-memory state. Recovery is `godot_editor
+# [input], disk vs the editor's in-memory state. Recovery is `godot_editor_edit
 # restart` (#250). A content diff (not an mtime check) is used deliberately: it
 # never false-positives when the editor itself saves project.godot (e.g. the
 # plugin's own startup autoload write), because disk is then written FROM memory.
@@ -204,7 +180,7 @@ static func _staleness_summary(a_added: Array, a_removed: Array, a_changed: Arra
 		return "project.godot on disk matches the editor's loaded settings."
 	return ("project.godot was edited on disk after the editor loaded it: %s. The editor's in-memory "
 		+ "settings are stale (its log may show phantom \"Identifier not found\" errors that do not "
-		+ "exist at runtime). Run `godot_editor restart` to reload project.godot (save:false to discard "
+		+ "exist at runtime). Run `godot_editor_edit restart` to reload project.godot (save:false to discard "
 		+ "unsaved editor changes).") % "; ".join(parts)
 
 

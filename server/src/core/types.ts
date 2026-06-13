@@ -39,7 +39,6 @@ export interface ToolDefinition<TSchema extends z.ZodType = z.ZodType> {
   description: string;
   annotations?: ToolAnnotations;
   schema: TSchema;
-  outputSchema?: z.ZodType;
   execute: (args: z.infer<TSchema>, ctx: ToolContext) => Promise<ToolExecuteResult>;
 }
 
@@ -48,16 +47,7 @@ export interface AnyToolDefinition {
   description: string;
   annotations?: ToolAnnotations;
   schema: z.ZodType;
-  outputSchema?: z.ZodType;
   execute: (args: unknown, ctx: ToolContext) => Promise<ToolExecuteResult>;
-}
-
-export interface ResourceDefinition {
-  uri: string;
-  name: string;
-  description: string;
-  mimeType: string;
-  handler: (ctx: ToolContext) => Promise<string>;
 }
 
 export interface Vector3 {

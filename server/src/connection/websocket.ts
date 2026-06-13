@@ -165,6 +165,10 @@ export class GodotConnection extends EventEmitter {
       case 'connection_refused':
         lines.push(`Status: Cannot reach Godot at ${diag.url}`);
         lines.push('Suggestion: Ensure Godot is running with the MCP addon enabled.');
+        if (diag.environment === 'wsl') {
+          lines.push('  Running in WSL: 127.0.0.1 does not cross to the Windows host.');
+          lines.push('  In the Godot MCP panel set Bind mode: WSL (not Localhost), or set GODOT_HOST.');
+        }
         break;
 
       case 'connection_lost':
@@ -178,6 +182,10 @@ export class GodotConnection extends EventEmitter {
       case 'never_connected':
         lines.push(`Status: Never successfully connected to Godot at ${diag.url}`);
         lines.push('Suggestion: Ensure Godot is running with the MCP addon enabled.');
+        if (diag.environment === 'wsl') {
+          lines.push('  Running in WSL: 127.0.0.1 does not cross to the Windows host.');
+          lines.push('  In the Godot MCP panel set Bind mode: WSL (not Localhost), or set GODOT_HOST.');
+        }
         break;
 
       case 'error':
@@ -511,7 +519,7 @@ export class GodotConnection extends EventEmitter {
       this.reconnectTimeout = null;
     }
 
-    for (const [id, pending] of this.pendingRequests) {
+    for (const pending of this.pendingRequests.values()) {
       clearTimeout(pending.timeoutId);
       pending.reject(new GodotConnectionError('Connection closed'));
     }

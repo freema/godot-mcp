@@ -407,9 +407,6 @@ func _on_debugger_message(message: String, data: Array) -> bool:
 		"take_screenshot":
 			_take_screenshot_deferred.call_deferred(data)
 			return true
-		"get_debug_output":
-			_handle_get_debug_output(data)
-			return true
 		"get_performance_metrics":
 			_handle_get_performance_metrics()
 			return true
@@ -525,14 +522,6 @@ func _send_screenshot_error(code: String, message: String) -> void:
 		0,
 		"%s: %s" % [code, message]
 	])
-
-
-func _handle_get_debug_output(data: Array) -> void:
-	var clear: bool = data[0] if data.size() > 0 else false
-	var output := _logger.get_output() if _logger else PackedStringArray()
-	if clear and _logger:
-		_logger.clear()
-	EngineDebugger.send_message("godot_mcp:debug_output_result", [output])
 
 
 func _handle_find_nodes(data: Array) -> void:
@@ -1244,12 +1233,6 @@ class _MCPGameLogger extends Logger:
 
 	func get_dropped() -> int:
 		return _dropped
-
-	func clear() -> void:
-		_mutex.lock()
-		_dropped += _output.size()  # cleared lines are gone the same as trimmed ones
-		_output.clear()
-		_mutex.unlock()
 
 
 func _handle_get_input_map() -> void:
@@ -2356,7 +2339,7 @@ func _handle_exec_run(data: Array) -> void:
 	mark = _exec_logger_mark()
 	var t0 := Time.get_ticks_msec()
 	# Synchronous and non-preemptible: an infinite loop here hangs the game (the
-	# relay/server time out; godot_editor stop kills the process). That is the
+	# relay/server time out; godot_editor_edit stop kills the process). That is the
 	# documented contract — no wall budget is pretended.
 	var result: Variant = inst.callv("_mcp_run", ctx["inputs"])
 	var duration := Time.get_ticks_msec() - t0

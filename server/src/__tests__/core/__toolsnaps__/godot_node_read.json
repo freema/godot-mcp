@@ -1,0 +1,53 @@
+{
+  "name": "godot_node_read",
+  "description": "Inspect scene nodes in the editor: read a node's effective properties (including class defaults a .tscn read cannot show), view the full scene tree as the editor sees it (including children inside instanced sub-scenes), and find nodes by name or type. Use it to discover node paths and verify the live state of the open scene before or after making changes. It cannot modify anything; to update properties or reparent a node, use godot_node_edit.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "get_properties",
+          "get_scene_tree",
+          "find"
+        ],
+        "description": "get_properties: Get a node's properties\nget_scene_tree: Full hierarchy of the open scene as the editor sees it, including children inside instanced sub-scenes (a .tscn file read cannot show those). Deep or wide scenes can be large — cap the result with max_depth and/or max_children; any node whose children are cut off carries \"truncated_children\": <count of omitted direct children> instead of (or alongside) \"children\".\nfind: Find nodes by name and/or type. Searches the RUNNING game's live tree when a game is playing (spawned entities included); otherwise searches the scene open in the editor."
+      },
+      "node_path": {
+        "type": "string",
+        "description": "Path to the node (required for: get_properties)"
+      },
+      "max_depth": {
+        "description": "Cap recursion depth (root = depth 1). Omit for the full tree. (for: get_scene_tree)",
+        "type": "integer",
+        "exclusiveMinimum": 0
+      },
+      "max_children": {
+        "description": "Cap how many children are listed per node. Omit to list every child. (for: get_scene_tree)",
+        "type": "integer",
+        "exclusiveMinimum": 0
+      },
+      "name_pattern": {
+        "description": "Glob pattern to match node names, e.g. \"*Spawner*\", \"Turret?\" (for: find)",
+        "type": "string"
+      },
+      "type": {
+        "description": "Filter by node type, e.g. \"CharacterBody2D\", \"Area2D\" (for: find)",
+        "type": "string"
+      },
+      "root_path": {
+        "description": "Path to start search from (defaults to scene root) (for: find)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "action"
+    ]
+  },
+  "annotations": {
+    "title": "Node (read)",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+  }
+}
